@@ -1,0 +1,10 @@
+opencv-python
+numpy
+mss
+pytesseract
+pygetwindow
+pynput
+pandas
+openpyxl
+rapidfuzz
+pyinstaller
