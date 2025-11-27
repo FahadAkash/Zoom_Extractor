@@ -8,6 +8,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 from datetime import datetime
 import pandas as pd
+from pynput import mouse
 from tracker import ZoomTracker
 from matcher import RollMatcher
 
@@ -49,6 +50,7 @@ class AttendanceApp:
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Diagnose Tesseract", command=self.diagnose_tesseract)
         help_menu.add_command(label="About", command=self.show_about)
         
     def create_tabs(self):
@@ -234,18 +236,165 @@ class AttendanceApp:
         self.status_bar.config(text="Ready")
         
     def manual_select_region(self):
-        """Manual region selection"""
+        """Manual region selection with visual feedback"""
         self.status_bar.config(text="Click and drag to select region...")
         messagebox.showinfo("Manual Selection", 
                            "Click and drag with your mouse over the participant list area.\n\n"
                            "Release to confirm selection.")
         
+        # Create visual feedback during selection
         def select_thread():
-            region = self.tracker.get_manual_region()
+            import tkinter as tk
+            
+            # Create overlay window for visual feedback
+            overlay = None
+            
+            def create_visual_feedback(start_x, start_y, end_x, end_y):
+                """Create or update visual feedback rectangle"""
+                nonlocal overlay
+                
+                if overlay is None:
+                    # Create overlay window
+                    overlay = tk.Toplevel(self.root)
+                    overlay.title("Selection Feedback")
+                    overlay.attributes('-alpha', 0.3)  # Transparent
+                    overlay.geometry("400x300")  # Will be resized
+                    overlay.configure(bg='blue')
+                    overlay.attributes('-topmost', True)  # Always on top
+                    overlay.overrideredirect(True)  # Remove window decorations
+                    
+                    # Create canvas for drawing selection rectangle
+                    self.overlay_canvas = tk.Canvas(overlay, highlightthickness=0, bg='blue')
+                    self.overlay_canvas.pack(fill=tk.BOTH, expand=True)
+                
+                # Update position and size
+                x1, y1 = min(start_x, end_x), min(start_y, end_y)
+                x2, y2 = max(start_x, end_x), max(start_y, end_y)
+                width = abs(end_x - start_x)
+                height = abs(end_y - start_y)
+                
+                overlay.geometry(f"{width}x{height}+{x1}+{y1}")
+                
+                # Clear and redraw rectangle
+                self.overlay_canvas.delete("all")
+                self.overlay_canvas.create_rectangle(0, 0, width, height, 
+                                                   outline='red', width=2, fill='blue')
+                
+                # Add text
+                self.overlay_canvas.create_text(width//2, 20, text="Selected Area", 
+                                              fill="white", font=("Arial", 10, "bold"))
+            
+            def destroy_visual_feedback():
+                """Destroy visual feedback overlay"""
+                nonlocal overlay
+                if overlay:
+                    try:
+                        overlay.destroy()
+                    except:
+                        pass
+                    overlay = None
+            
+            # Show instruction in main window status bar
+            self.status_bar.config(text="Click and drag to select region... (Visual feedback will appear)")
+            
+            # Create a temporary indicator
+            indicator = tk.Toplevel(self.root)
+            indicator.title("Selecting Region")
+            indicator.geometry("400x100+100+100")
+            indicator.attributes('-topmost', True)
+            indicator.configure(bg='yellow')
+            
+            label = tk.Label(indicator, 
+                           text="Selecting region...\nClick and drag on the screen\nVisual feedback box will appear",
+                           bg='yellow', fg='black', font=('Arial', 10), wraplength=380)
+            label.pack(expand=True, padx=10, pady=10)
+            
+            # Temporarily replace the tracker's get_manual_region method to add visual feedback
+            original_method = self.tracker.get_manual_region
+            
+            def get_manual_region_with_feedback():
+                """Wrapper around get_manual_region with visual feedback"""
+                print("\nDrag over the Zoom PARTICIPANT LIST area...")
+                print("Click and drag with mouse, then release.")
+                
+                selection_start = None
+                selection_end = None
+                
+                def on_move(x, y):
+                    """Callback for mouse movement during dragging"""
+                    if selection_start:
+                        # Update visual feedback
+                        self.root.after(0, lambda: create_visual_feedback(selection_start[0], selection_start[1], x, y))
+                
+                def on_click(x, y, button, pressed):
+                    nonlocal selection_start, selection_end
+                    if pressed:
+                        selection_start = (x, y)
+                        print(f"Selection started at ({x}, {y})")
+                    else:
+                        selection_end = (x, y)
+                        print(f"Selection ended at ({x}, {y})")
+                        return False
+                
+                # Create listeners for both move and click events
+                move_listener = mouse.Listener(on_move=on_move)
+                click_listener = mouse.Listener(on_click=on_click)
+                
+                # Start both listeners
+                move_listener.start()
+                click_listener.start()
+                
+                # Wait for click listener to finish (when mouse is released)
+                click_listener.join()
+                
+                # Stop move listener
+                move_listener.stop()
+                
+                # Destroy visual feedback
+                self.root.after(0, destroy_visual_feedback)
+                
+                if selection_start and selection_end:
+                    x1, y1 = selection_start
+                    x2, y2 = selection_end
+                    
+                    # Print the selected region
+                    width = abs(x2 - x1)
+                    height = abs(y2 - y1)
+                    top = min(y1, y2)
+                    left = min(x1, x2)
+                    print(f"Selected region: Top={top}, Left={left}, Width={width}, Height={height}")
+                    
+                    return {
+                        "top": top,
+                        "left": left,
+                        "width": width,
+                        "height": height
+                    }
+                return None
+            
+            # Replace the method temporarily
+            self.tracker.get_manual_region = get_manual_region_with_feedback
+            
+            try:
+                # Get region from tracker (this will show visual feedback during selection)
+                region = self.tracker.get_manual_region()
+            finally:
+                # Restore original method
+                self.tracker.get_manual_region = original_method
+            
+            # Destroy indicator and visual feedback
+            try:
+                indicator.destroy()
+            except:
+                pass
+            
             if region:
                 self.tracker.set_region(region)
                 self.root.after(0, lambda: self.region_status.config(text="✓ Region set (manual)", foreground="green"))
                 self.root.after(0, lambda: self.log("Region selected manually"))
+            else:
+                self.root.after(0, lambda: self.log("Region selection cancelled"))
+            
             self.root.after(0, lambda: self.status_bar.config(text="Ready"))
         
         threading.Thread(target=select_thread, daemon=True).start()
@@ -264,7 +413,15 @@ class AttendanceApp:
             self.log("Tracking started")
             self.status_bar.config(text="Tracking active...")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to start tracking:\n{e}")
+            error_msg = str(e)
+            if "tesseract" in error_msg.lower() or "ocr" in error_msg.lower():
+                messagebox.showerror("Tesseract OCR Error", 
+                                   "Tesseract OCR is not installed or not in PATH.\n\n"
+                                   "Please install Tesseract OCR from:\n"
+                                   "https://github.com/UB-Mannheim/tesseract/wiki\n\n"
+                                   "After installation, restart your computer and try again.")
+            else:
+                messagebox.showerror("Error", f"Failed to start tracking:\n{e}")
             
     def stop_tracking(self):
         """Stop tracking"""
@@ -424,6 +581,39 @@ class AttendanceApp:
             except Exception as e:
                 messagebox.showerror("Error", f"Export failed:\n{e}")
                 
+    def diagnose_tesseract(self):
+        """Run Tesseract OCR diagnostic"""
+        try:
+            import subprocess
+            import sys
+            import os
+            
+            # Run the diagnostic script
+            result = subprocess.run([
+                sys.executable, 
+                os.path.join(os.path.dirname(__file__), 'diagnose_tesseract.py')
+            ], capture_output=True, text=True, timeout=30)
+            
+            # Show results in a messagebox
+            if result.returncode == 0:
+                messagebox.showinfo("Tesseract Diagnostic", result.stdout)
+            else:
+                messagebox.showerror("Tesseract Diagnostic Error", 
+                                   f"Diagnostic failed:\n{result.stderr}")
+        except Exception as e:
+            # Try to set the path directly and test
+            try:
+                import pytesseract
+                pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+                version = pytesseract.get_tesseract_version()
+                messagebox.showinfo("Tesseract Fix", 
+                                  f"Tesseract found and configured!\nVersion: {version}\n\n"
+                                  "The application should now work correctly.")
+            except Exception as e2:
+                messagebox.showerror("Error", 
+                                   f"Failed to run diagnostic:\n{e}\n\n"
+                                   f"Also failed to configure Tesseract directly:\n{e2}")
+    
     def show_about(self):
         """Show about dialog"""
         messagebox.showinfo("About", 
