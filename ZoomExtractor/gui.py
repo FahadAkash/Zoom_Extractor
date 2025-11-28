@@ -42,6 +42,7 @@ class AttendanceApp:
         self.is_tracking = False
         self.roll_file_loaded = False
         self.meeting_active = False
+        self.continuous_save_enabled = False  # Continuous save feature toggle
         self.participants_queue = queue.Queue()  # Queue for participant data
         self.meeting_thread = None
         self.stop_event = threading.Event()
@@ -875,7 +876,26 @@ class AttendanceApp:
                             # Remove (Host, me) and similar annotations
                             import re
                             text = re.sub(r'\(.*?(?:Host|Me|me).*?\)', '', text, flags=re.IGNORECASE).strip()
-                            if text and text not in names:
+                            
+                            # Filter out unwanted UI elements
+                            unwanted_patterns = [
+                                'Unmute', 'start Video', 'Participants', 'chat', 'Reactions', 
+                                'Share Screen', 'more', 'leave', 'Pleader', 'upgrade your browser',
+                                'update your browder', 'Speaker', 'Gallery View', 'Participant \(',
+                                'Mute', 'Turn off', 'NEW' 'Invite', 'Record', 'Security', 'Manage Participants'
+                            ]
+                            
+                            is_unwanted = False
+                            for pattern in unwanted_patterns:
+                                if pattern.lower() in text.lower():
+                                    is_unwanted = True
+                                    break
+                            
+                            # Also filter out text with numbers in parentheses like "(3)"
+                            if re.search(r'\(\s*\d+\s*\)', text):
+                                is_unwanted = True
+                                
+                            if not is_unwanted and text and text not in names:
                                 names.append(text)
                     if names:
                         break

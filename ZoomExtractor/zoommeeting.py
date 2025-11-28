@@ -320,7 +320,27 @@ def start(name, proxy, user, wait_time, headless_mode=False):
                 for e in elems:
                     text = e.text.strip()
                     if text and text not in names and len(text) > 1:
-                        names.append(text)
+                        # Filter out unwanted UI elements
+                        import re
+                        unwanted_patterns = [
+                            'Unmute', 'start Video', 'Participants', 'chat', 'Reactions', 
+                            'Share Screen', 'more', 'leave', 'Pleader', 'upgrade your browser',
+                            'update your browder', 'Speaker', 'Gallery View', 'Participant \(',
+                            'Mute', 'Turn off', 'Invite', 'Record', 'Security', 'Manage Participants'
+                        ]
+                        
+                        is_unwanted = False
+                        for pattern in unwanted_patterns:
+                            if pattern.lower() in text.lower():
+                                is_unwanted = True
+                                break
+                        
+                        # Also filter out text with numbers in parentheses like "(3)"
+                        if re.search(r'\(\s*\d+\s*\)', text):
+                            is_unwanted = True
+                            
+                        if not is_unwanted:
+                            names.append(text)
                 if names:
                     sync_print(f"[DEBUG] Found names using selector: {sel}")
                     return names
