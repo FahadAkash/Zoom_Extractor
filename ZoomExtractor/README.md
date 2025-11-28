@@ -10,6 +10,10 @@ A production-ready attendance tracking system for Zoom meetings with automatic n
 📊 **Multiple Export Formats** - Excel, CSV reports  
 📦 **Standalone Executable** - Build as `.exe` for Windows or binary for Linux/Mac  
 🔔 **Event Detection** - Real-time join/leave notifications  
+🪟 **Dynamic Window Tracking** - Automatically follows Zoom window when moved (NEW!)  
+🔍 **Enhanced OCR Accuracy** - Advanced image preprocessing for better name detection (NEW!)  
+💪 **Overlap Handling** - Works even when other windows overlap Zoom (NEW!)
+  
 
 ---
 
@@ -158,9 +162,12 @@ zoom/
 - **Tkinter** - GUI framework
 - **OpenCV** - Image processing
 - **Tesseract OCR** - Text recognition
+- **Win32 API (pywin32)** - Window capture and tracking (NEW!)
+- **Pillow** - Image format conversion (NEW!)
 - **RapidFuzz** - Fuzzy string matching
 - **Pandas** - Data handling
 - **PyInstaller** - Executable builder
+
 
 ---
 

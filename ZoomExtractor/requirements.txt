@@ -8,3 +8,5 @@ pandas
 openpyxl
 rapidfuzz
 pyinstaller
+pywin32
+pillow

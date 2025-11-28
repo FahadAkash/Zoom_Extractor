@@ -42,6 +42,8 @@ class AttendanceApp:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Load Roll Numbers", command=self.load_roll_file)
         file_menu.add_separator()
+        file_menu.add_command(label="Refresh Zoom Window", command=self.refresh_zoom_window)
+        file_menu.add_separator()
         file_menu.add_command(label="Export to Excel", command=self.export_excel)
         file_menu.add_command(label="Export to CSV", command=self.export_csv)
         file_menu.add_separator()
@@ -401,17 +403,14 @@ class AttendanceApp:
         
     def start_tracking(self):
         """Start tracking"""
-        if not self.tracker.region:
-            messagebox.showwarning("Setup Required", "Please set capture region first!")
-            return
-        
+        # Don't require region to be set manually - auto-detection will handle it
         try:
             self.tracker.start()
             self.is_tracking = True
             self.btn_start.config(state=tk.DISABLED)
             self.btn_stop.config(state=tk.NORMAL)
             self.log("Tracking started")
-            self.status_bar.config(text="Tracking active...")
+            self.status_bar.config(text="Tracking active... (Auto-detecting Zoom window)")
         except Exception as e:
             error_msg = str(e)
             if "tesseract" in error_msg.lower() or "ocr" in error_msg.lower():
@@ -456,6 +455,17 @@ class AttendanceApp:
         
     def on_tracker_update(self, participants, event_type, changed):
         """Callback from tracker"""
+        # Update status bar to show window tracking is active
+        if hasattr(self.tracker, '_last_window_title') and self.tracker._last_window_title:
+            # Check if window is still available
+            current_region = self.tracker.find_zoom_window_by_title(self.tracker._last_window_title)
+            if current_region:
+                self.status_bar.config(text=f"Tracking active... (Window: {self.tracker._last_window_title})")
+            else:
+                self.status_bar.config(text=f"Tracking active... (Window '{self.tracker._last_window_title}' not found)")
+        else:
+            self.status_bar.config(text="Tracking active...")
+        
         # Match names if roll file loaded
         if self.roll_file_loaded:
             matches = self.matcher.match_batch(participants)
@@ -477,25 +487,30 @@ class AttendanceApp:
         self.tree.delete(*self.tree.get_children())
         
         matched_count = 0
+        total_detected = 0
+        
         for name, match in matches.items():
+            total_detected += 1
             status = match['status']
+            
             if status == 'matched':
                 matched_count += 1
                 tag = 'matched'
-            else:
-                tag = 'unknown'
-            
-            self.tree.insert('', tk.END, values=(
-                name,
-                match['roll'],
-                f"{match['confidence']:.0f}%",
-                status.title()
-            ), tags=(tag,))
+                
+                # Only show matched participants in the table
+                self.tree.insert('', tk.END, values=(
+                    name,
+                    match['roll'],
+                    f"{match['confidence']:.0f}%",
+                    status.title()
+                ), tags=(tag,))
+            # Skip unknown/unmatched entries (don't show in table)
         
         self.tree.tag_configure('matched', foreground='green')
         self.tree.tag_configure('unknown', foreground='orange')
         
-        self.update_stats(len(matches), len(matches), matched_count)
+        self.update_stats(matched_count, total_detected, matched_count)
+
         
     def update_stats(self, active, total, matched):
         """Update statistics"""
@@ -613,6 +628,25 @@ class AttendanceApp:
                 messagebox.showerror("Error", 
                                    f"Failed to run diagnostic:\n{e}\n\n"
                                    f"Also failed to configure Tesseract directly:\n{e2}")
+    
+    def refresh_zoom_window(self):
+        """Manually refresh Zoom window detection"""
+        self.status_bar.config(text="Searching for Zoom window...")
+        self.root.update_idletasks()  # Force UI update
+        
+        region = self.tracker.find_zoom_window()
+        if region:
+            self.tracker.set_region(region)
+            self.region_status.config(text="✓ Region set (auto)", foreground="green")
+            self.log("Zoom window detected and set automatically")
+            if hasattr(self.tracker, '_last_window_title') and self.tracker._last_window_title:
+                self.status_bar.config(text=f"Tracking active... (Window: {self.tracker._last_window_title})")
+            else:
+                self.status_bar.config(text="Tracking active...")
+        else:
+            self.region_status.config(text="Region not set", foreground="orange")
+            self.status_bar.config(text="Zoom window not found")
+            messagebox.showwarning("Not Found", "Zoom window not found. Make sure Zoom is running and visible.")
     
     def show_about(self):
         """Show about dialog"""

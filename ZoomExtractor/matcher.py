@@ -23,9 +23,9 @@ class RollMatcher:
         """
         Load names and roll numbers from text file
         
-        Expected format:
-        Fahad Akash 08
-        John Doe 15
+        Supports multiple formats:
+        - "Fahad Akash 08" (Name followed by roll)
+        - "1. Jahid" or "1	Jahid" (Roll followed by name)
         
         Returns:
             Number of records loaded
@@ -35,24 +35,43 @@ class RollMatcher:
         
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
-                for line in f:
+                for line_num, line in enumerate(f, 1):
                     line = line.strip()
                     if not line:
                         continue
                     
-                    # Try to extract name and roll number
-                    # Pattern: "Name ... RollNumber" (roll at end)
-                    parts = line.rsplit(maxsplit=1)
-                    if len(parts) >= 2:
-                        name = parts[0].strip()
-                        roll = parts[1].strip()
+                    # Try Format 1: "1. Name" or "1	Name" or "1 Name"
+                    # Pattern: number (with optional dot/tab) followed by name
+                    match = re.match(r'^(\d+)[\.\s\t]+(.+)$', line)
+                    if match:
+                        roll = match.group(1).strip()
+                        name = match.group(2).strip()
                         self.database[name] = roll
                         count += 1
+                        print(f"  Line {line_num}: '{name}' → Roll {roll}")
+                        continue
+                    
+                    # Try Format 2: "Name RollNumber" (roll at end)
+                    parts = line.rsplit(maxsplit=1)
+                    if len(parts) >= 2:
+                        # Check if last part is a number or could be roll number
+                        potential_roll = parts[1].strip()
+                        name = parts[0].strip()
+                        
+                        # Accept if it looks like a roll number
+                        if potential_roll.isdigit() or len(potential_roll) <= 3:
+                            self.database[name] = potential_roll
+                            count += 1
+                            print(f"  Line {line_num}: '{name}' → Roll {potential_roll}")
+                            continue
+                    
+                    # If we get here, format not recognized
+                    print(f"  Line {line_num}: Skipped (unrecognized format): {line}")
                         
         except Exception as e:
             raise Exception(f"Error reading file: {e}")
         
-        print(f"Loaded {count} records from {filepath}")
+        print(f"\n✓ Loaded {count} records from {filepath}")
         return count
     
     def load_from_text(self, text):
@@ -83,16 +102,9 @@ class RollMatcher:
         """
         Match a detected name to database
         
-        Args:
-            detected_name: Name detected by OCR
-            
-        Returns:
-            dict: {
-                'matched_name': best matching name,
-                'roll': roll number,
-                'confidence': match score (0-100),
-                'status': 'matched' or 'unknown'
-            }
+        Priority:
+        1. Roll number found in text (e.g. "15 Fahad") -> 100% match
+        2. Fuzzy name matching (e.g. "Fahad") -> Score based match
         """
         if not self.database:
             return {
@@ -102,30 +114,135 @@ class RollMatcher:
                 'status': 'unknown'
             }
         
-        # Use fuzzy matching
+        # Preprocess the detected name
+        processed_name = self.preprocess_name(detected_name)
+        print(f"Matching name: '{detected_name}' -> processed: '{processed_name}'")
+        
+        # STRATEGY 1: Look for Roll Number in the Zoom Name
+        # Extract all numbers from the text
+        import re
+        numbers = re.findall(r'\d+', detected_name)
+        
+        # Create a reverse lookup map (Roll -> Name)
+        roll_to_name = {v: k for k, v in self.database.items()}
+        
+        for num in numbers:
+            # Clean number (remove leading zeros for matching)
+            clean_num = str(int(num))
+            original_num = num
+            
+            # Check if this number exists in our database
+            # Try exact match, or match with/without leading zeros
+            matched_db_name = None
+            
+            if original_num in roll_to_name:
+                matched_db_name = roll_to_name[original_num]
+            elif clean_num in roll_to_name:
+                matched_db_name = roll_to_name[clean_num]
+                
+            if matched_db_name:
+                print(f"  ✓ FOUND ROLL NUMBER MATCH: {original_num} -> {matched_db_name}")
+                return {
+                    'matched_name': matched_db_name,
+                    'roll': self.database[matched_db_name],
+                    'confidence': 100,  # Perfect match by ID
+                    'status': 'matched'
+                }
+
+        # STRATEGY 2: Fuzzy Name Matching
         result = process.extractOne(
-            detected_name,
+            processed_name,
             self.database.keys(),
             scorer=fuzz.token_sort_ratio
         )
         
         if result:
             matched_name, score, _ = result
+            print(f"  Found fuzzy match: '{matched_name}' with score {score}")
             
             if score >= self.threshold:
+                print(f"  Match accepted (threshold: {self.threshold})")
                 return {
                     'matched_name': matched_name,
                     'roll': self.database[matched_name],
                     'confidence': score,
                     'status': 'matched'
                 }
+            else:
+                print(f"  Match rejected (below threshold: {self.threshold})")
         
+        # If no match found, try with original name as fallback
+        if processed_name != detected_name:
+            print(f"  Trying fallback with original name: '{detected_name}'")
+            result = process.extractOne(
+                detected_name,
+                self.database.keys(),
+                scorer=fuzz.token_sort_ratio
+            )
+            
+            if result:
+                matched_name, score, _ = result
+                print(f"  Fallback found match: '{matched_name}' with score {score}")
+                
+                if score >= self.threshold:
+                    print(f"  Fallback match accepted (threshold: {self.threshold})")
+                    return {
+                        'matched_name': matched_name,
+                        'roll': self.database[matched_name],
+                        'confidence': score,
+                        'status': 'matched'
+                    }
+                else:
+                    print(f"  Fallback match rejected (below threshold: {self.threshold})")
+            else:
+                print("  No match found with original name")
+        
+        print(f"  No match found, returning as unknown")
         return {
             'matched_name': detected_name,
             'roll': 'N/A',
             'confidence': 0,
             'status': 'unknown'
         }
+    
+    def preprocess_name(self, name):
+        """Preprocess name to handle common OCR issues"""
+        if not name:
+            return ""
+            
+        # 1. Remove leading/trailing noise characters
+        name = name.strip('| [](){}<>.,:;-_')
+        
+        # 2. Remove specific noise patterns using regex
+        # Remove vertical bars inside text
+        name = name.replace('|', '')
+        
+        # Remove (Host, me) and variations - handles missing opening parenthesis too
+        name = re.sub(r'\(?.*?(?:Host|Me|me).*?\)?', '', name, flags=re.IGNORECASE)
+        
+        # Remove "GBR", "ED" and other common short noise words
+        name = re.sub(r'\b(?:GBR|ED|ER|ft)\b', '', name, flags=re.IGNORECASE)
+        
+        # Clean up multiple spaces
+        name = ' '.join(name.split())
+        
+        # 3. Apply specific name corrections
+        corrections = {
+            'Farhad': 'Fahad',
+            'Farad': 'Fahad',
+            'atash': 'Akash',
+            'Akas': 'Akash',
+            'Akashhh': 'Akash',
+            'Akashh': 'Akash',
+            'Fahad Akas': 'Fahad Akash',
+        }
+        
+        # Apply corrections
+        for wrong, correct in corrections.items():
+            if wrong in name:
+                name = name.replace(wrong, correct)
+        
+        return name.strip()
     
     def match_batch(self, detected_names):
         """
