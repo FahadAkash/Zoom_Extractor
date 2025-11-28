@@ -8,9 +8,11 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 from datetime import datetime
 import pandas as pd
+import requests
 from matcher import RollMatcher
 import time
 import queue
+import pyperclip
 
 # Import zoommeeting functionality
 try:
@@ -58,6 +60,7 @@ class AttendanceApp:
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Load Roll Numbers", command=self.load_roll_file)
+        file_menu.add_command(label="Load from Google Sheet", command=self.load_google_sheet)
         file_menu.add_separator()
         file_menu.add_command(label="Export to Excel", command=self.export_excel)
         file_menu.add_command(label="Export to CSV", command=self.export_csv)
@@ -102,6 +105,7 @@ class AttendanceApp:
         btn_frame.pack(fill=tk.X, pady=5)
         
         ttk.Button(btn_frame, text="Browse File", command=self.load_roll_file).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="From Google Sheet", command=self.load_google_sheet).pack(side=tk.LEFT, padx=5)
         self.roll_status = ttk.Label(btn_frame, text="No file loaded", foreground="red")
         self.roll_status.pack(side=tk.LEFT, padx=5)
         
@@ -214,6 +218,7 @@ class AttendanceApp:
         ttk.Button(btn_frame, text="Refresh Report", command=self.generate_report).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Export Excel", command=self.export_excel).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Export CSV", command=self.export_csv).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Copy to Clipboard", command=self.copy_attendance_to_clipboard).pack(side=tk.LEFT, padx=5)
         
     def create_status_bar(self):
         """Status bar at bottom"""
@@ -236,6 +241,88 @@ class AttendanceApp:
                 self.log(f"Loaded {count} roll numbers from file")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load file:\n{e}")
+                
+    def load_google_sheet(self):
+        """Load roll numbers from Google Sheet"""
+        # Create a dialog to get the Google Sheet URL
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Google Sheet URL")
+        dialog.geometry("500x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        ttk.Label(dialog, text="Enter Google Sheets URL:").pack(pady=10)
+        
+        # Use default URL
+        default_url = "https://docs.google.com/spreadsheets/d/11_2OwNaav5TrzuteEAekweMMYopRbhMhpuCRxvtXzhU/edit?gid=0#gid=0"
+        url_var = tk.StringVar(value=default_url)
+        entry = ttk.Entry(dialog, textvariable=url_var, width=60)
+        entry.pack(padx=10, pady=5)
+        entry.focus()
+        
+        def load_sheet():
+            url = url_var.get().strip()
+            if url:
+                try:
+                    count = self.matcher.load_from_google_sheet(url)
+                    self.roll_file_loaded = True
+                    self.roll_status.config(text=f"✓ {count} records loaded", foreground="green")
+                    self.log(f"Loaded {count} roll numbers from Google Sheet")
+                    dialog.destroy()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to load Google Sheet:\n{e}")
+            else:
+                messagebox.showwarning("Warning", "Please enter a valid URL")
+        
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+        
+        ttk.Button(button_frame, text="Load", command=load_sheet).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        
+        # Bind Enter key to load
+        entry.bind('<Return>', lambda e: load_sheet())
+        
+    def copy_attendance_to_clipboard(self):
+        """Copy attendance data to clipboard in the specified format"""
+        try:
+            # Get matched participants with roll numbers
+            matched_participants = []
+            for name, match_data in self.matcher.matched_records.items():
+                if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
+                    try:
+                        roll_num = int(match_data['roll'])
+                        matched_participants.append(roll_num)
+                    except ValueError:
+                        # Skip if roll number is not a valid integer
+                        continue
+            
+            # Sort the roll numbers
+            matched_participants.sort()
+            
+            # Format the data as specified
+            date_str = datetime.now().strftime("%d.%m.%y")
+            code = "CSE - 407"  # You can make this configurable if needed
+            roll_str = f"({','.join(map(str, matched_participants))})"
+            
+            # Create the formatted text
+            formatted_text = f"Date: {date_str}\n\nCode: {code}\n\nROLL:\n\n{roll_str}"
+            
+            # Copy to clipboard
+            pyperclip.copy(formatted_text)
+            self.log("Attendance data copied to clipboard")
+            messagebox.showinfo("Success", "Attendance data copied to clipboard successfully!")
+            
+        except Exception as e:
+            self.log(f"Error copying to clipboard: {e}")
+            messagebox.showerror("Error", f"Failed to copy to clipboard:\n{e}")
                 
     # Removed auto_detect_region and manual_select_region methods as they are no longer needed
     # with the new Zoom meeting approach

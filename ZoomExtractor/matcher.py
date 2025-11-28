@@ -5,6 +5,8 @@ Handles fuzzy matching of detected names to roll numbers
 
 from rapidfuzz import fuzz, process
 import re
+import requests
+import pandas as pd
 
 
 class RollMatcher:
@@ -319,3 +321,119 @@ class RollMatcher:
             })
         
         return data
+    
+    def load_from_google_sheet(self, sheet_url):
+        """
+        Load names and roll numbers from Google Sheet
+        
+        Args:
+            sheet_url: Google Sheets URL
+        
+        Returns:
+            Number of records loaded
+        """
+        try:
+            # Convert Google Sheets URL to CSV export URL
+            # Handle different URL formats
+            if '/edit' in sheet_url:
+                # Extract the document ID
+                doc_id = sheet_url.split('/d/')[1].split('/')[0]
+                csv_url = f"https://docs.google.com/spreadsheets/d/{doc_id}/export?format=csv"
+            elif '/export' in sheet_url:
+                csv_url = sheet_url.split('&')[0]  # Remove extra parameters
+            else:
+                raise ValueError("Invalid Google Sheets URL format")
+            
+            # Load CSV data using pandas
+            df = pd.read_csv(csv_url)
+            
+            # Clear existing database
+            self.database = {}
+            count = 0
+            
+            # Remove completely empty rows and columns
+            df = df.dropna(how='all').dropna(axis=1, how='all')
+            
+            # If dataframe is empty, raise an error
+            if df.empty:
+                raise ValueError("No data found in Google Sheet")
+            
+            # Reset index after dropping rows
+            df = df.reset_index(drop=True)
+            
+            # Find the header row (first row with 'name' and 'roll' or similar)
+            header_row_idx = 0
+            name_col_idx = -1
+            roll_col_idx = -1
+            
+            # Look for header row in first 5 rows
+            for idx in range(min(5, len(df))):
+                row_values = [str(val).strip().lower() for val in df.iloc[idx] if pd.notna(val)]
+                row_str = ' '.join(row_values)
+                
+                # Check if this row contains header-like values
+                if 'name' in row_str or 'roll' in row_str or 'id' in row_str:
+                    # Find name and roll columns in this row
+                    for col_idx, val in enumerate(df.iloc[idx]):
+                        if pd.isna(val):
+                            continue
+                        val_str = str(val).strip().lower()
+                        if 'name' in val_str:
+                            name_col_idx = col_idx
+                        elif 'roll' in val_str or 'id' in val_str:
+                            roll_col_idx = col_idx
+                    
+                    if name_col_idx != -1 and roll_col_idx != -1:
+                        header_row_idx = idx
+                        break
+            
+            # If we couldn't find proper headers, use the first row as data and assume first two columns
+            if name_col_idx == -1 or roll_col_idx == -1:
+                name_col_idx = 0
+                roll_col_idx = min(1, len(df.columns) - 1)
+                header_row_idx = -1  # No header row
+            
+            # Slice dataframe to start from after header row
+            data_start_idx = header_row_idx + 1 if header_row_idx >= 0 else 0
+            df_data = df.iloc[data_start_idx:].reset_index(drop=True)
+            
+            # Get column names
+            if header_row_idx >= 0 and name_col_idx < len(df.columns) and roll_col_idx < len(df.columns):
+                actual_name_col = df.columns[name_col_idx]
+                actual_roll_col = df.columns[roll_col_idx]
+            else:
+                # Use positional indexing
+                actual_name_col = df_data.columns[name_col_idx]
+                actual_roll_col = df_data.columns[roll_col_idx]
+            
+            # Process each row
+            for _, row in df_data.iterrows():
+                # Skip if either column is missing
+                if name_col_idx >= len(row) or roll_col_idx >= len(row):
+                    continue
+                    
+                name_val = row.iloc[name_col_idx] if name_col_idx < len(row) else None
+                roll_val = row.iloc[roll_col_idx] if roll_col_idx < len(row) else None
+                
+                # Convert to string and strip
+                name = str(name_val).strip() if pd.notna(name_val) else ''
+                roll = str(roll_val).strip() if pd.notna(roll_val) else ''
+                
+                # Skip empty rows
+                if name and roll and name.lower() != 'nan' and roll.lower() != 'nan' and name != 'None' and roll != 'None':
+                    # Additional check to ensure we have meaningful data
+                    if len(name) > 1 and len(roll) >= 1:
+                        self.database[name] = roll
+                        count += 1
+            
+            print(f"\n✓ Loaded {count} records from Google Sheet")
+            print("Loaded records:")
+            for name, roll in list(self.database.items())[:10]:  # Show first 10 records
+                print(f"  {name} -> {roll}")
+            if len(self.database) > 10:
+                print(f"  ... and {len(self.database) - 10} more records")
+            return count
+            
+        except Exception as e:
+            raise Exception(f"Error loading Google Sheet: {e}")
+    

@@ -6,3 +6,5 @@ openpyxl
 rapidfuzz
 pywin32
 pillow
+requests
+pyperclip
