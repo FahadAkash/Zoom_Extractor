@@ -8,3 +8,4 @@ pywin32
 pillow
 requests
 pyperclip
+ttkbootstrap

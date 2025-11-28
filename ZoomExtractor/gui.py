@@ -4,7 +4,9 @@ Main application interface using Tkinter
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 import threading
 from datetime import datetime
 import pandas as pd
@@ -37,48 +39,8 @@ class AttendanceApp:
         self.root.minsize(900, 700)
         
         # Set modern theme colors
-        self.root.style = ttk.Style()
-        self.root.style.theme_use('clam')
-        
-        # Configure modern color scheme
-        self.root.style.configure('TFrame', background='#f0f0f0')
-        self.root.style.configure('TLabelFrame', background='#f0f0f0', foreground='#2c3e50', font=('Arial', 10, 'bold'))
-        self.root.style.configure('TLabelFrame.Label', background='#f0f0f0', foreground='#2c3e50', font=('Arial', 10, 'bold'))
-        
-        # Configure custom styles with modern colors
-        self.root.style.configure('Accent.TButton', 
-                                foreground='white', 
-                                background='#3498db', 
-                                font=('Arial', 9, 'bold'),
-                                padding=6)
-        self.root.style.map('Accent.TButton',
-                           background=[('active', '#2980b9')],
-                           foreground=[('active', 'white')])
-        
-        self.root.style.configure('TButton', 
-                                foreground='#2c3e50', 
-                                background='#ecf0f1', 
-                                font=('Arial', 9),
-                                padding=6)
-        self.root.style.map('TButton',
-                           background=[('active', '#bdc3c7')],
-                           foreground=[('active', '#2c3e50')])
-        
-        self.root.style.configure('Treeview', 
-                                background='white',
-                                foreground='#2c3e50',
-                                fieldbackground='white',
-                                font=('Arial', 9))
-        self.root.style.configure('Treeview.Heading', 
-                                background='#3498db',
-                                foreground='white',
-                                font=('Arial', 9, 'bold'))
-        self.root.style.map('Treeview.Heading',
-                           background=[('active', '#2980b9')])
-        
-        self.root.style.configure('TScrollbar', 
-                                background='#bdc3c7',
-                                troughcolor='#ecf0f1')
+        # Theme is handled by ttkbootstrap in main()
+        pass
         
         # Initialize components
         self.matcher = RollMatcher(threshold=75)
@@ -159,7 +121,7 @@ class AttendanceApp:
         welcome_label.pack()
         
         # Roll number file section
-        frame_roll = ttk.LabelFrame(self.setup_tab, text="Student Database", padding=15)
+        frame_roll = ttk.Labelframe(self.setup_tab, text="Student Database", padding=15)
         frame_roll.pack(fill=tk.X, padx=15, pady=10)
         
         ttk.Label(frame_roll, text="Load student data with format: 'Name Roll'", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
@@ -168,13 +130,13 @@ class AttendanceApp:
         btn_frame = ttk.Frame(frame_roll)
         btn_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Button(btn_frame, text="📁 Browse File", command=self.load_roll_file).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="🔗 From Google Sheet", command=self.load_google_sheet).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="📁 Browse File", command=self.load_roll_file, bootstyle=PRIMARY).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="🔗 From Google Sheet", command=self.load_google_sheet, bootstyle=INFO).pack(side=tk.LEFT, padx=5)
         self.roll_status = ttk.Label(btn_frame, text="No file loaded", foreground="red", font=('Arial', 9))
         self.roll_status.pack(side=tk.LEFT, padx=10)
         
         # Zoom Meeting Details
-        frame_meeting = ttk.LabelFrame(self.setup_tab, text="Zoom Meeting Configuration", padding=15)
+        frame_meeting = ttk.Labelframe(self.setup_tab, text="Zoom Meeting Configuration", padding=15)
         frame_meeting.pack(fill=tk.X, padx=15, pady=10)
         
         # Meeting ID
@@ -193,7 +155,7 @@ class AttendanceApp:
         ttk.Spinbox(frame_meeting, from_=1, to=100, textvariable=self.participants_var, width=10, font=('Arial', 10)).grid(row=2, column=1, sticky=tk.W, padx=5)
         
         # Settings
-        frame_settings = ttk.LabelFrame(self.setup_tab, text="Advanced Settings", padding=15)
+        frame_settings = ttk.Labelframe(self.setup_tab, text="Advanced Settings", padding=15)
         frame_settings.pack(fill=tk.X, padx=15, pady=10)
         
         ttk.Label(frame_settings, text="Match Threshold (%):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W, pady=8)
@@ -209,7 +171,7 @@ class AttendanceApp:
                                                text="Enable Continuous Save (Auto-save report periodically)", 
                                                variable=self.continuous_save_var, 
                                                command=self.toggle_continuous_save,
-                                               style='Accent.TCheckbutton')
+                                               bootstyle="round-toggle")
         continuous_save_check.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
         
         # Add help text
@@ -235,22 +197,22 @@ class AttendanceApp:
         header_label.pack()
         
         # Controls
-        control_frame = ttk.LabelFrame(self.live_tab, text="Meeting Controls", padding=15)
+        control_frame = ttk.Labelframe(self.live_tab, text="Meeting Controls", padding=15)
         control_frame.pack(fill=tk.X, padx=15, pady=10)
         
         self.btn_start = ttk.Button(control_frame, text="▶ Join Meeting", 
-                                     command=self.start_tracking, style="Accent.TButton")
+                                     command=self.start_tracking, bootstyle=SUCCESS)
         self.btn_start.pack(side=tk.LEFT, padx=10)
         
         self.btn_stop = ttk.Button(control_frame, text="⏹ Stop Tracking", 
-                                    command=self.stop_tracking, state=tk.DISABLED)
+                                    command=self.stop_tracking, state=tk.DISABLED, bootstyle=DANGER)
         self.btn_stop.pack(side=tk.LEFT, padx=10)
         
-        self.btn_reset = ttk.Button(control_frame, text="↺ Reset Data", command=self.reset_data)
+        self.btn_reset = ttk.Button(control_frame, text="↺ Reset Data", command=self.reset_data, bootstyle=WARNING)
         self.btn_reset.pack(side=tk.LEFT, padx=10)
         
         # Stats
-        stats_frame = ttk.LabelFrame(self.live_tab, text="Attendance Statistics", padding=15)
+        stats_frame = ttk.Labelframe(self.live_tab, text="Attendance Statistics", padding=15)
         stats_frame.pack(fill=tk.X, padx=15, pady=10)
         
         self.stat_active = ttk.Label(stats_frame, text="Active: 0", font=('Arial', 14, 'bold'), foreground='#3498db')
@@ -263,7 +225,7 @@ class AttendanceApp:
         self.stat_matched.pack(side=tk.LEFT, padx=25)
         
         # Participant list
-        list_frame = ttk.LabelFrame(self.live_tab, text="Participant List", padding=10)
+        list_frame = ttk.Labelframe(self.live_tab, text="Participant List", padding=10)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         # Treeview
@@ -293,7 +255,7 @@ class AttendanceApp:
         scrollbar_h.pack(side=tk.BOTTOM, fill=tk.X)
         
         # Event log
-        log_frame = ttk.LabelFrame(self.live_tab, text="System Events", padding=10)
+        log_frame = ttk.Labelframe(self.live_tab, text="System Events", padding=10)
         log_frame.pack(fill=tk.X, padx=15, pady=10)
         
         self.log_text = scrolledtext.ScrolledText(log_frame, height=6, state=tk.DISABLED, font=('Consolas', 9))
@@ -311,7 +273,7 @@ class AttendanceApp:
                                 justify=tk.CENTER)
         header_label.pack()
         
-        frame = ttk.LabelFrame(self.report_tab, text="Attendance Summary", padding=15)
+        frame = ttk.Labelframe(self.report_tab, text="Attendance Summary", padding=15)
         frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         ttk.Label(frame, text="Session Report", font=('Arial', 16, 'bold')).pack(pady=10)
@@ -322,10 +284,10 @@ class AttendanceApp:
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Button(btn_frame, text="🔄 Refresh Report", command=self.generate_report).pack(side=tk.LEFT, padx=8)
-        ttk.Button(btn_frame, text="📊 Export Excel", command=self.export_excel).pack(side=tk.LEFT, padx=8)
-        ttk.Button(btn_frame, text="📑 Export CSV", command=self.export_csv).pack(side=tk.LEFT, padx=8)
-        ttk.Button(btn_frame, text="📋 Copy to Clipboard", command=self.copy_attendance_to_clipboard).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_frame, text="🔄 Refresh Report", command=self.generate_report, bootstyle=PRIMARY).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_frame, text="📊 Export Excel", command=self.export_excel, bootstyle=SUCCESS).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_frame, text="📑 Export CSV", command=self.export_csv, bootstyle=INFO).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_frame, text="📋 Copy to Clipboard", command=self.copy_attendance_to_clipboard, bootstyle=SECONDARY).pack(side=tk.LEFT, padx=8)
         
     def create_status_bar(self):
         """Status bar at bottom"""
@@ -398,8 +360,8 @@ class AttendanceApp:
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=10)
         
-        ttk.Button(button_frame, text="Load", command=load_sheet).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Load", command=load_sheet, bootstyle=PRIMARY).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, bootstyle=SECONDARY).pack(side=tk.LEFT, padx=5)
         
         # Bind Enter key to load
         entry.bind('<Return>', lambda e: load_sheet())
@@ -1158,7 +1120,7 @@ class AttendanceApp:
 
 
 def main():
-    root = tk.Tk()
+    root = ttk.Window(themename="superhero")
     app = AttendanceApp(root)
     root.mainloop()
 
