@@ -326,7 +326,8 @@ def start(name, proxy, user, wait_time, headless_mode=False):
                             'Unmute', 'start Video', 'Participants', 'chat', 'Reactions', 
                             'Share Screen', 'more', 'leave', 'Pleader', 'upgrade your browser',
                             'update your browder', 'Speaker', 'Gallery View', 'Participant \(',
-                            'Mute', 'Turn off', 'Invite', 'Record', 'Security', 'Manage Participants'
+                            'Mute', 'Turn off', 'NEW', 'Invite', 'Record', 'Security', 'Manage Participants',
+                            'Stop Video', 'Batch-72-01'
                         ]
                         
                         is_unwanted = False
