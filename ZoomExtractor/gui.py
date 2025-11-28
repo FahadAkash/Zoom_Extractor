@@ -140,6 +140,13 @@ class AttendanceApp:
         self.threshold_label = ttk.Label(frame_settings, text="75")
         self.threshold_label.grid(row=0, column=2)
         
+        # Continuous Save Option
+        self.continuous_save_var = tk.BooleanVar(value=False)
+        continuous_save_check = ttk.Checkbutton(frame_settings, text="Enable Continuous Save (Auto-save report periodically)", 
+                                               variable=self.continuous_save_var, 
+                                               command=self.toggle_continuous_save)
+        continuous_save_check.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
+        
         frame_settings.columnconfigure(1, weight=1)
         
     def create_live_tab(self):
@@ -319,7 +326,6 @@ class AttendanceApp:
             # Copy to clipboard
             pyperclip.copy(formatted_text)
             self.log("Attendance data copied to clipboard")
-            messagebox.showinfo("Success", "Attendance data copied to clipboard successfully!")
             
         except Exception as e:
             self.log(f"Error copying to clipboard: {e}")
@@ -403,6 +409,14 @@ class AttendanceApp:
         self.threshold_label.config(text=str(val))
         self.matcher.threshold = val
         
+    def toggle_continuous_save(self):
+        """Toggle continuous save feature"""
+        self.continuous_save_enabled = self.continuous_save_var.get()
+        if self.continuous_save_enabled:
+            self.log("Continuous save enabled")
+        else:
+            self.log("Continuous save disabled")
+        
     # Removed on_tracker_update method as it's no longer needed
     # with the new Zoom meeting approach
             
@@ -467,6 +481,53 @@ class AttendanceApp:
         
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
+        
+    def save_continuous_report(self):
+        """Save report continuously to a single file with timestamp"""
+        try:
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"attendance_report_{timestamp}.txt"
+            
+            # Generate report content
+            stats = self.matcher.get_statistics() if self.roll_file_loaded else None
+            
+            report = "=" * 60 + "\n"
+            report += "ZOOM ATTENDANCE REPORT\n"
+            report += "=" * 60 + "\n\n"
+            report += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            report += f"Made by: Fahad Akash\n\n"
+            
+            if stats:
+                report += f"Total Detected: {stats['total_detected']}\n"
+                report += f"Matched: {stats['matched']}\n"
+                report += f"Unknown: {stats['unknown']}\n"
+                report += f"Match Rate: {stats['match_rate']:.1f}%\n\n"
+            
+            report += "-" * 60 + "\n"
+            report += "ATTENDANCE DETAILS\n"
+            report += "-" * 60 + "\n\n"
+            
+            # Only show matched participants with roll numbers
+            matched_participants = []
+            for name, match_data in self.matcher.matched_records.items():
+                if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
+                    matched_participants.append((name, match_data['roll']))
+            
+            # Sort by roll number
+            matched_participants.sort(key=lambda x: x[1])
+            
+            for name, roll in matched_participants:
+                report += f"  • {name:<30} Roll: {roll}\n"
+            
+            # Save to file
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(report)
+            
+            self.log(f"Report saved continuously: {filename}")
+            
+        except Exception as e:
+            self.log(f"Error saving continuous report: {e}")
         
     def generate_report(self):
         """Generate session report with only matched participants"""
@@ -549,7 +610,6 @@ class AttendanceApp:
     def _join_zoom_meeting(self, meeting_id, passcode, num_participants):
         """Join Zoom meeting with specified parameters"""
         try:
-            fake = Faker('en_IN')
             drivers = []
             
             self.log(f"Starting {num_participants} participants for meeting {meeting_id}")
@@ -616,7 +676,7 @@ class AttendanceApp:
                         pass
                     
                     # Fill display name
-                    user_name = fake.name()
+                    user_name = f"Participant-{i+1}"
                     try:
                         inp = WebDriverWait(driver, 5).until(ec.presence_of_element_located((By.ID, 'input-for-name')))
                         inp.clear()
@@ -930,6 +990,11 @@ class AttendanceApp:
                             
                             # Log event
                             self.root.after(0, lambda p=len(participants): self.log(f"Participants updated: {p} detected"))
+                            
+                            # Continuous save if enabled
+                            if self.continuous_save_enabled:
+                                self.root.after(0, self.save_continuous_report)
+                            
                             processed = True
                     except queue.Empty:
                         break
@@ -951,6 +1016,7 @@ class AttendanceApp:
                            "Zoom Attendance System v1.0\n\n"
                            "Automatically track Zoom meeting attendance\n"
                            "with roll number matching.\n\n"
+                           "Made by: Fahad Akash\n\n"
                            "Built with Python, Tkinter, Selenium, and RapidFuzz")
 
 
