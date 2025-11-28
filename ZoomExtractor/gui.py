@@ -483,11 +483,10 @@ class AttendanceApp:
         self.log_text.config(state=tk.DISABLED)
         
     def save_continuous_report(self):
-        """Save report continuously to a single file with timestamp"""
+        """Save report continuously to a single file"""
         try:
-            # Create filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"attendance_report_{timestamp}.txt"
+            # Use a single filename
+            filename = "attendance_report.txt"
             
             # Generate report content
             stats = self.matcher.get_statistics() if self.roll_file_loaded else None
@@ -520,11 +519,11 @@ class AttendanceApp:
             for name, roll in matched_participants:
                 report += f"  • {name:<30} Roll: {roll}\n"
             
-            # Save to file
+            # Save to file (overwrite each time)
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(report)
             
-            self.log(f"Report saved continuously: {filename}")
+            self.log(f"Report updated continuously: {filename}")
             
         except Exception as e:
             self.log(f"Error saving continuous report: {e}")
@@ -676,7 +675,7 @@ class AttendanceApp:
                         pass
                     
                     # Fill display name
-                    user_name = f"Participant-{i+1}"
+                    user_name = f"Batch-72-{i+1:02d}"
                     try:
                         inp = WebDriverWait(driver, 5).until(ec.presence_of_element_located((By.ID, 'input-for-name')))
                         inp.clear()
