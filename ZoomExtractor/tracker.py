@@ -14,23 +14,11 @@ import threading
 import time
 import os
 
-# Win32 imports for window capture
-try:
-    import win32gui
-    import win32ui
-    import win32con
-    from PIL import Image
-    WIN32_AVAILABLE = True
-except ImportError:
-    WIN32_AVAILABLE = False
-    print("Warning: pywin32 not available. Window capture will use fallback method.")
-
 # Configure pytesseract to use the Tesseract executable directly
 try:
     pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 except:
     pass  # If this fails, pytesseract will try to find tesseract in PATH
-
 
 
 class ZoomTracker:
@@ -52,79 +40,6 @@ class ZoomTracker:
         self.capture_thread = None
         self.sct = None
         
-        # Window capture support
-        self.window_handle = None  # HWND for Win32 capture
-        self.window_title = None  # Store window title for tracking
-        self.use_window_capture = WIN32_AVAILABLE  # Use Win32 if available
-
-    def capture_window_content(self, hwnd):
-        """
-        Capture window content using Win32 PrintWindow API
-        This works even when window is partially obscured or moved
-        
-        Args:
-            hwnd: Window handle (HWND)
-            
-        Returns:
-            numpy array (BGR image) or None on failure
-        """
-        if not WIN32_AVAILABLE:
-            return None
-            
-        try:
-            # Get window dimensions
-            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-            width = right - left
-            height = bottom - top
-            
-            # Get window DC
-            hwndDC = win32gui.GetWindowDC(hwnd)
-            mfcDC = win32ui.CreateDCFromHandle(hwndDC)
-            saveDC = mfcDC.CreateCompatibleDC()
-            
-            # Create bitmap
-            saveBitMap = win32ui.CreateBitmap()
-            saveBitMap.CreateCompatibleBitmap(mfcDC, width, height)
-            saveDC.SelectObject(saveBitMap)
-            
-            # PrintWindow captures the window content
-            # PW_RENDERFULLCONTENT (0x00000002) for better capture
-            result = win32gui.PrintWindow(hwnd, saveDC.GetSafeHdc(), 2)
-            
-            if result == 0:
-                print("PrintWindow failed, trying alternative method...")
-                # Try without PW_RENDERFULLCONTENT flag
-                result = win32gui.PrintWindow(hwnd, saveDC.GetSafeHdc(), 0)
-            
-            # Convert to bitmap
-            bmpinfo = saveBitMap.GetInfo()
-            bmpstr = saveBitMap.GetBitmapBits(True)
-            
-            # Convert to PIL Image
-            img = Image.frombuffer(
-                'RGB',
-                (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
-                bmpstr, 'raw', 'BGRX', 0, 1
-            )
-            
-            # Clean up
-            win32gui.DeleteObject(saveBitMap.GetHandle())
-            saveDC.DeleteDC()
-            mfcDC.DeleteDC()
-            win32gui.ReleaseDC(hwnd, hwndDC)
-            
-            # Convert PIL to numpy array (BGR for OpenCV)
-            img_np = np.array(img)
-            img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-            
-            return img_bgr
-            
-        except Exception as e:
-            print(f"Error capturing window content: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
     def find_zoom_window(self):
         """Auto-detect Zoom window"""
         print("Searching for Zoom window...")
@@ -135,109 +50,20 @@ class ZoomTracker:
         except Exception as e:
             print(f"Warning: Tesseract OCR not available: {e}")
         
-        # Patterns to EXCLUDE (our own app)
-        exclude_patterns = [
-            "zoom attendance system",
-            "attendance system",
-            "zoom extractor"
-        ]
-        
         try:
-            # Priority 1: Look for actual Zoom meeting windows
-            zoom_meeting_patterns = [
-                "zoom meeting",
-                "zoom webinar",
-                "'s zoom meeting",
-                "zoom - "
-            ]
+            # Try different patterns to find Zoom window
+            zoom_patterns = ["zoom", "Zoom", "ZOOM", "zoom meeting", "zoom webinar"]
             
-            print("Looking for Zoom meeting windows...")
             for w in gw.getAllTitles():
-                if not w.strip():
-                    continue
-                
-                w_lower = w.lower()
-                
-                # Skip our own app window
-                if any(exclude in w_lower for exclude in exclude_patterns):
-                    print(f"Skipping own app window: {w}")
-                    continue
-                
-                # Check for meeting patterns
-                for pattern in zoom_meeting_patterns:
-                    if pattern in w_lower:
-                        try:
-                            windows = gw.getWindowsWithTitle(w)
-                            if not windows:
-                                continue
-                                
-                            win = windows[0]
-                            if win.isMinimized:
-                                win.restore()
-                                time.sleep(0.3)
-                            
-                            # Validate window size
-                            if win.width < 400 or win.height < 300:
-                                continue
-                            
-                            print(f"✓ Found Zoom meeting window: {w}")
-                            
-                            # Get window handle for Win32 capture
-                            if WIN32_AVAILABLE:
-                                try:
-                                    hwnd = win._hWnd
-                                    self.window_handle = hwnd
-                                    self.window_title = w
-                                    print(f"  Window handle: {hwnd}")
-                                except:
-                                    print("  Could not get window handle")
-                            
-                            return {
-                                "top": win.top,
-                                "left": win.left,
-                                "width": win.width,
-                                "height": win.height
-                            }
-                        except Exception as e:
-                            print(f"Error accessing window '{w}': {e}")
-                            continue
-            
-            # Priority 2: Look for any window with "zoom" (but not our app)
-            print("Looking for any Zoom windows...")
-            for w in gw.getAllTitles():
-                if not w.strip():
-                    continue
-                
-                w_lower = w.lower()
-                
-                # Skip our own app
-                if any(exclude in w_lower for exclude in exclude_patterns):
-                    continue
-                
-                if "zoom" in w_lower:
+                # Check if window title contains any zoom pattern
+                if any(pattern in w.lower() for pattern in zoom_patterns) and w.strip():
                     try:
-                        windows = gw.getWindowsWithTitle(w)
-                        if not windows:
-                            continue
-                            
-                        win = windows[0]
+                        win = gw.getWindowsWithTitle(w)[0]
                         if win.isMinimized:
-                            continue
-                        
-                        if win.width < 400 or win.height < 300:
-                            continue
-                        
-                        print(f"✓ Found Zoom window: {w}")
-                        
-                        if WIN32_AVAILABLE:
-                            try:
-                                hwnd = win._hWnd
-                                self.window_handle = hwnd
-                                self.window_title = w
-                                print(f"  Window handle: {hwnd}")
-                            except:
-                                pass
-                        
+                            win.restore()
+                        print(f"Found Zoom window: {w}")
+                        # Store the window title for dynamic tracking
+                        self._last_window_title = w
                         return {
                             "top": win.top,
                             "left": win.left,
@@ -247,14 +73,35 @@ class ZoomTracker:
                     except Exception as e:
                         print(f"Error accessing window '{w}': {e}")
                         continue
+            
+            # If no zoom window found, try to find any window that might be Zoom
+            # by checking window class or other properties
+            print("Trying alternative detection methods...")
+            for w in gw.getAllWindows():
+                try:
+                    # Check if window title is not empty and window is visible
+                    if w.title.strip() and not w.isMinimized:
+                        # Check if window dimensions are typical for a video conferencing app
+                        if w.width > 800 and w.height > 600:
+                            print(f"Found potential window: {w.title} ({w.width}x{w.height})")
+                            # Store the window title for dynamic tracking
+                            self._last_window_title = w.title
+                            # For debugging, let's return the first large window we find
+                            # In a real implementation, you might want to be more selective
+                            return {
+                                "top": w.top,
+                                "left": w.left,
+                                "width": w.width,
+                                "height": w.height
+                            }
+                except:
+                    continue
                         
         except Exception as e:
             print(f"Error finding window: {e}")
         
-        print("✗ Zoom window NOT found.")
-        print("Please open a Zoom meeting or manually select the region.")
+        print("Zoom window NOT found.")
         return None
-
     
     def find_zoom_window_by_title(self, title):
         """Find Zoom window by specific title for dynamic tracking"""
@@ -264,16 +111,6 @@ class ZoomTracker:
                 if windows:
                     win = windows[0]
                     if not win.isMinimized:
-                        # Update window handle
-                        if WIN32_AVAILABLE:
-                            try:
-                                hwnd = win._hWnd
-                                if hwnd != self.window_handle:
-                                    self.window_handle = hwnd
-                                    print(f"Updated window handle: {hwnd}")
-                            except:
-                                pass
-                        
                         return {
                             "top": win.top,
                             "left": win.left,
@@ -283,7 +120,6 @@ class ZoomTracker:
         except Exception as e:
             print(f"Error finding window by title '{title}': {e}")
         return None
-
 
     def get_manual_region(self):
         """Manual region selection via mouse drag with visual feedback"""
@@ -332,14 +168,10 @@ class ZoomTracker:
     def set_region(self, region):
         """Set capture region manually"""
         self.region = region
-        # DON'T clear window handle - keep it for Win32 capture
-        # This allows Win32 capture to work even with manual region selection
-        # Overlapping windows won't affect capture if we have window handle
-        print(f"Region set: {region}")
-        if self.window_handle:
-            print(f"  Will use Win32 capture (HWND: {self.window_handle}) + crop to region")
-        else:
-            print(f"  Will use screen capture (no window handle)")
+        # Clear the last window title when setting region manually
+        # This disables dynamic window tracking for manually selected regions
+        if hasattr(self, '_last_window_title'):
+            delattr(self, '_last_window_title')
 
     def set_tile_height(self, height):
         """Update tile height"""
@@ -388,182 +220,75 @@ class ZoomTracker:
             print(f"Error checking Tesseract: {e}")
             return names
         
-        for idx, tile in enumerate(tiles):
+        for tile in tiles:
             try:
                 # Convert to grayscale
                 gray = cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY)
                 
-                # Advanced preprocessing pipeline for better OCR accuracy
+                # Try multiple preprocessing techniques to improve OCR
+                # Technique 1: Simple threshold
+                _, thresh1 = cv2.threshold(gray, 140, 255, cv2.THRESH_BINARY)
+                text1 = pytesseract.image_to_string(thresh1, config="--psm 7 -c tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()- ").strip()
                 
-                # 1. Noise reduction with Gaussian blur
-                denoised = cv2.GaussianBlur(gray, (3, 3), 0)
+                # Technique 2: Adaptive threshold
+                thresh2 = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+                text2 = pytesseract.image_to_string(thresh2, config="--psm 7 -c tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()- ").strip()
                 
-                # 2. Contrast enhancement using CLAHE
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                enhanced = clahe.apply(denoised)
+                # Technique 3: No preprocessing
+                text3 = pytesseract.image_to_string(gray, config="--psm 7 -c tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()- ").strip()
                 
-                # 3. Binarization with Otsu's method
-                _, otsu_thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                # Technique 4: Try with different PSM mode for single line text
+                text4 = pytesseract.image_to_string(gray, config="--psm 8 -c tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()- ").strip()
                 
-                # 4. Adaptive thresholding for varying lighting
-                adaptive_thresh = cv2.adaptiveThreshold(
-                    enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                    cv2.THRESH_BINARY, 11, 2
-                )
-                
-                # Try multiple preprocessing methods and PSM modes
-                candidates = []
-                
-                # Method 1: Otsu threshold with PSM 7 (single line)
-                text1 = pytesseract.image_to_string(
-                    otsu_thresh,
-                    config="--psm 7 --oem 3"
-                ).strip()
-                if text1:
-                    candidates.append(text1)
-                
-                # Method 2: Adaptive threshold with PSM 7
-                text2 = pytesseract.image_to_string(
-                    adaptive_thresh,
-                    config="--psm 7 --oem 3"
-                ).strip()
-                if text2:
-                    candidates.append(text2)
-                
-                # Method 3: Enhanced image with PSM 8 (single word)
-                text3 = pytesseract.image_to_string(
-                    enhanced,
-                    config="--psm 8 --oem 3"
-                ).strip()
-                if text3:
-                    candidates.append(text3)
-                
-                # Method 4: Original grayscale with PSM 6 (uniform block)
-                text4 = pytesseract.image_to_string(
-                    gray,
-                    config="--psm 6 --oem 3"
-                ).strip()
-                if text4:
-                    candidates.append(text4)
-                
-                # Select best candidate (longest valid text with letters)
+                # Use the best result (longest valid name)
+                candidates = [text1, text2, text3, text4]
                 best_text = ""
                 for text in candidates:
-                    # Clean up text
-                    text = ' '.join(text.split())  # Remove extra whitespace
-                    
-                    # Must contain letters and be reasonable length
-                    if text and any(c.isalpha() for c in text) and 2 < len(text) < 60:
-                        if len(text) > len(best_text):
+                    # Filter for valid names (avoid empty or whitespace-only)
+                    if text and not text.isspace() and len(text) > len(best_text):
+                        # Additional validation - check if it looks like a name
+                        if any(c.isalpha() for c in text):  # Must contain at least one letter
                             best_text = text
                 
-                if best_text:
-                    # Apply OCR error corrections
-                    corrected_text = self.correct_common_ocr_errors(best_text)
-                    
-                    # Validate if this looks like a real name
-                    if self.is_valid_name(corrected_text):
+                # Filter valid names
+                if 1 < len(best_text) < 50 and not best_text.isspace():
+                    # Clean up the text
+                    cleaned_text = ' '.join(best_text.split())  # Remove extra whitespace
+                    if cleaned_text:  # Only add non-empty names
+                        # Apply some common corrections for better accuracy
+                        corrected_text = self.correct_common_ocr_errors(cleaned_text)
                         names.append(corrected_text)
-                        print(f"Tile {idx+1}: '{best_text}' → '{corrected_text}'")
-                    else:
-                        print(f"Tile {idx+1}: '{corrected_text}' REJECTED (invalid format)")
-                    
+                        print(f"Detected name: '{cleaned_text}' -> Corrected to: '{corrected_text}'")  # Debug output
             except Exception as e:
-                print(f"OCR error on tile {idx+1}: {e}")
+                print(f"OCR error: {e}")
                 
         return names
-
-    def is_valid_name(self, text):
-        """
-        Validate if OCR text looks like a valid participant name
-        Filters out garbage, UI elements, and junk text
-        """
-        if not text or len(text) < 2:
-            return False
-        
-        # Must have at least 2 letters
-        letter_count = sum(1 for c in text if c.isalpha())
-        if letter_count < 2:
-            return False
-        
-        # Reject if too many special characters (indicates garbage)
-        special_chars = sum(1 for c in text if not c.isalnum() and c not in ' ()-.')
-        if special_chars > 5:
-            return False
-        
-        # Reject if too short or too long
-        if len(text) > 60:
-            return False
-        
-        # Reject common UI patterns
-        ui_patterns = [
-            'zoom attendance',
-            'start tracking',
-            'stop', 
-            'reset data',
-            'active:',
-            'detected:',
-            'matched:',
-            'roll number',
-            'match %',
-            'status',
-            'event log',
-            'file help',
-            '===',
-            '___',
-            '|||'
-        ]
-        
-        text_lower = text.lower()
-        for pattern in ui_patterns:
-            if pattern in text_lower:
-                return False
-        
-        # Reject if mostly special characters
-        alpha_ratio = letter_count / len(text)
-        if alpha_ratio < 0.4:  # At least 40% should be letters
-            return False
-        
-        return True
-
+    
     def correct_common_ocr_errors(self, text):
         """Correct common OCR errors in names"""
-        if not text:
-            return ""
-            
-        # 1. Remove leading/trailing noise characters
-        text = text.strip('| [](){}<>.,:;-_')
-        
-        # 2. Remove specific noise patterns using regex
-        import re
-        
-        # Remove vertical bars inside text (often read from grid lines)
-        text = text.replace('|', '')
-        
-        # Remove (Host, me) and variations - handles missing opening parenthesis too
-        # Matches: (Host, me), Host, me), (Host, me, Host, me
-        text = re.sub(r'\(?.*?(?:Host|Me|me).*?\)?', '', text, flags=re.IGNORECASE)
-        
-        # Remove "GBR", "ED" and other common short noise words if they appear isolated
-        text = re.sub(r'\b(?:GBR|ED|ER|ft)\b', '', text, flags=re.IGNORECASE)
-        
-        # Clean up multiple spaces
-        text = ' '.join(text.split())
-        
-        # 3. Apply specific name corrections
+        # Common OCR corrections
         corrections = {
             'Farhad': 'Fahad',
-            'Farad': 'Fahad',
-            'atash': 'Akash',
             'Akas': 'Akash',
-            'Akashhh': 'Akash',
-            'Akashh': 'Akash',
             'Fahad Akas': 'Fahad Akash',
+            'Fahad Akash (': 'Fahad Akash',
+            'Fahad Akash (Hose': 'Fahad Akash (Host)',
+            'Fahad Akash (Me': 'Fahad Akash (Me)',
+            'Fahad Akash (Host': 'Fahad Akash (Host)',
+            'Fahad Akash Me': 'Fahad Akash (Me)',
         }
         
+        # Apply corrections
         for wrong, correct in corrections.items():
             if wrong in text:
                 text = text.replace(wrong, correct)
+        
+        # Remove trailing punctuation that might be OCR artifacts
+        text = text.rstrip('.,:;')
+        
+        # Ensure proper formatting for Zoom participant names
+        if '(' in text and ')' not in text:
+            text = text.replace('(', '(Me)') if 'me' in text.lower() else text.replace('(', '(Host)')
         
         return text.strip()
 
@@ -610,7 +335,6 @@ class ZoomTracker:
 
     def capture_loop(self):
         """Main capture loop (runs in thread)"""
-        # Initialize MSS in this thread (fixes threading error)
         self.sct = mss()
         
         # Check if Tesseract is available before starting capture loop
@@ -646,11 +370,6 @@ class ZoomTracker:
                 region = self.find_zoom_window()
                 if region:
                     self.set_region(region)
-                    # Restore window handle that was cleared by set_region
-                    # (we want to use window tracking for auto-detected windows)
-                    if hasattr(self, '_temp_window_handle'):
-                        self.window_handle = self._temp_window_handle
-                        self.window_title = self._temp_window_title
                     print(f"Auto-detected Zoom window: {region}")
                 else:
                     print("Could not auto-detect Zoom window, waiting...")
@@ -658,73 +377,22 @@ class ZoomTracker:
                     continue
             
             # Dynamic window tracking - update region if window has moved
-            if self.window_title and self.use_window_capture:
-                current_region = self.find_zoom_window_by_title(self.window_title)
+            if hasattr(self, '_last_window_title') and self._last_window_title:
+                current_region = self.find_zoom_window_by_title(self._last_window_title)
                 if current_region:
                     if current_region != self.region:
-                        print(f"Window moved: {self.region} → {current_region}")
-                        self.region = current_region
+                        print(f"Zoom window moved from {self.region} to {current_region}")
+                        self.region = current_region  # Update region directly to avoid clearing _last_window_title
                 else:
-                    print(f"Window '{self.window_title}' not found, attempting re-detection...")
-                    # Try to re-detect
-                    region = self.find_zoom_window()
-                    if region:
-                        self.region = region
+                    print(f"Zoom window '{self._last_window_title}' no longer found, pausing tracking")
+                    # Don't return here, continue with capture but it will likely fail
+                    # The UI can handle this case
             
             try:
                 capture_count += 1
-                print(f"\n=== Capture #{capture_count} ===")
+                print(f"Capture #{capture_count} started")
                 
-                screenshot = None
-                
-                # Try Win32 window capture first if available
-                if self.use_window_capture and self.window_handle and WIN32_AVAILABLE:
-                    print(f"Using Win32 capture (HWND: {self.window_handle})")
-                    window_screenshot = self.capture_window_content(self.window_handle)
-                    
-                    if window_screenshot is not None:
-                        # If we have a manual region set, crop to that region
-                        # Convert screen coordinates to window-relative coordinates
-                        if self.region:
-                            try:
-                                # Get window position
-                                left, top, right, bottom = win32gui.GetWindowRect(self.window_handle)
-                                
-                                # Convert region (screen coords) to window-relative coords
-                                rel_x = self.region['left'] - left
-                                rel_y = self.region['top'] - top
-                                rel_w = self.region['width']
-                                rel_h = self.region['height']
-                                
-                                # Crop the captured window to the selected region
-                                h, w = window_screenshot.shape[:2]
-                                if (rel_x >= 0 and rel_y >= 0 and 
-                                    rel_x + rel_w <= w and rel_y + rel_h <= h):
-                                    screenshot = window_screenshot[rel_y:rel_y+rel_h, rel_x:rel_x+rel_w]
-                                    print(f"  Cropped to region: {rel_w}x{rel_h} at ({rel_x},{rel_y})")
-                                else:
-                                    # Region outside window, use full window
-                                    screenshot = window_screenshot
-                                    print(f"  Warning: Region outside window bounds, using full window")
-                            except Exception as e:
-                                print(f"  Error cropping to region: {e}")
-                                screenshot = window_screenshot
-                        else:
-                            screenshot = window_screenshot
-                    else:
-                        print("Win32 capture failed, falling back to screen capture...")
-                        self.use_window_capture = False  # Disable for this session
-                
-                # Fallback to screen region capture
-                if screenshot is None:
-                    print(f"Using screen region capture: {self.region}")
-                    screenshot = np.array(self.sct.grab(self.region))
-                
-                if screenshot is None:
-                    print("Failed to capture screenshot")
-                    time.sleep(1)
-                    continue
-                
+                screenshot = np.array(self.sct.grab(self.region))
                 print(f"Screenshot captured: {screenshot.shape}")
                 
                 tiles = self.crop_tiles(screenshot)
@@ -735,7 +403,7 @@ class ZoomTracker:
                 
                 self.update_participants(names)
                 
-                print(f"=== Capture #{capture_count} completed ===\n")
+                print(f"Capture #{capture_count} completed\n")
                 time.sleep(0.5)  # Adjust capture frequency
                 
             except Exception as e:
@@ -743,8 +411,6 @@ class ZoomTracker:
                 import traceback
                 traceback.print_exc()
                 time.sleep(1)
-
-
 
     def start(self):
         """Start tracking"""
@@ -759,11 +425,9 @@ class ZoomTracker:
     def stop(self):
         """Stop tracking"""
         self.running = False
-        print("Stopping tracker...")
-        if self.capture_thread and self.capture_thread.is_alive():
-            self.capture_thread.join(timeout=1)  # Reduced timeout
+        if self.capture_thread:
+            self.capture_thread.join(timeout=2)
         print("Tracker stopped")
-
 
     def pause(self):
         """Pause tracking"""

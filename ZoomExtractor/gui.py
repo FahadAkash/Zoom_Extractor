@@ -8,9 +8,23 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 from datetime import datetime
 import pandas as pd
-from pynput import mouse
-from tracker import ZoomTracker
 from matcher import RollMatcher
+import time
+import queue
+
+# Import zoommeeting functionality
+try:
+    from faker import Faker
+    from selenium import webdriver
+    from selenium.webdriver.support.wait import WebDriverWait
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as ec
+    from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
+    ZOOM_MEETING_AVAILABLE = True
+except ImportError:
+    ZOOM_MEETING_AVAILABLE = False
+    print("Warning: Zoom meeting functionality not available. Install selenium and faker.")
 
 
 class AttendanceApp:
@@ -20,12 +34,15 @@ class AttendanceApp:
         self.root.geometry("900x700")
         
         # Initialize components
-        self.tracker = ZoomTracker(callback=self.on_tracker_update)
         self.matcher = RollMatcher(threshold=75)
         
         # State
         self.is_tracking = False
         self.roll_file_loaded = False
+        self.meeting_active = False
+        self.participants_queue = queue.Queue()  # Queue for participant data
+        self.meeting_thread = None
+        self.stop_event = threading.Event()
         
         # Create UI
         self.create_menu()
@@ -42,8 +59,6 @@ class AttendanceApp:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Load Roll Numbers", command=self.load_roll_file)
         file_menu.add_separator()
-        file_menu.add_command(label="Refresh Zoom Window", command=self.refresh_zoom_window)
-        file_menu.add_separator()
         file_menu.add_command(label="Export to Excel", command=self.export_excel)
         file_menu.add_command(label="Export to CSV", command=self.export_csv)
         file_menu.add_separator()
@@ -52,7 +67,6 @@ class AttendanceApp:
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
-        help_menu.add_command(label="Diagnose Tesseract", command=self.diagnose_tesseract)
         help_menu.add_command(label="About", command=self.show_about)
         
     def create_tabs(self):
@@ -91,35 +105,35 @@ class AttendanceApp:
         self.roll_status = ttk.Label(btn_frame, text="No file loaded", foreground="red")
         self.roll_status.pack(side=tk.LEFT, padx=5)
         
-        # Region selection
-        frame_region = ttk.LabelFrame(self.setup_tab, text="Capture Region", padding=10)
-        frame_region.pack(fill=tk.X, padx=10, pady=10)
+        # Zoom Meeting Details
+        frame_meeting = ttk.LabelFrame(self.setup_tab, text="Zoom Meeting Details", padding=10)
+        frame_meeting.pack(fill=tk.X, padx=10, pady=10)
         
-        ttk.Button(frame_region, text="Auto-Detect Zoom Window", 
-                  command=self.auto_detect_region).pack(fill=tk.X, pady=5)
-        ttk.Button(frame_region, text="Manual Selection (Drag)", 
-                  command=self.manual_select_region).pack(fill=tk.X, pady=5)
+        # Meeting ID
+        ttk.Label(frame_meeting, text="Meeting ID:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.meeting_id_var = tk.StringVar()
+        ttk.Entry(frame_meeting, textvariable=self.meeting_id_var, width=20).grid(row=0, column=1, sticky=tk.W, padx=5)
         
-        self.region_status = ttk.Label(frame_region, text="Region not set", foreground="orange")
-        self.region_status.pack(pady=5)
+        # Passcode
+        ttk.Label(frame_meeting, text="Passcode:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.passcode_var = tk.StringVar()
+        ttk.Entry(frame_meeting, textvariable=self.passcode_var, width=20, show="*").grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        # Number of Participants
+        ttk.Label(frame_meeting, text="Participants:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.participants_var = tk.IntVar(value=1)
+        ttk.Spinbox(frame_meeting, from_=1, to=100, textvariable=self.participants_var, width=10).grid(row=2, column=1, sticky=tk.W, padx=5)
         
         # Settings
         frame_settings = ttk.LabelFrame(self.setup_tab, text="Settings", padding=10)
         frame_settings.pack(fill=tk.X, padx=10, pady=10)
         
-        ttk.Label(frame_settings, text="Tile Height (pixels):").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.tile_height_var = tk.IntVar(value=70)
-        ttk.Scale(frame_settings, from_=30, to=150, variable=self.tile_height_var, 
-                 orient=tk.HORIZONTAL, command=self.update_tile_height).grid(row=0, column=1, sticky=tk.EW, padx=5)
-        self.tile_label = ttk.Label(frame_settings, text="70")
-        self.tile_label.grid(row=0, column=2)
-        
-        ttk.Label(frame_settings, text="Match Threshold (%):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(frame_settings, text="Match Threshold (%):").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.threshold_var = tk.IntVar(value=75)
         ttk.Scale(frame_settings, from_=50, to=100, variable=self.threshold_var, 
-                 orient=tk.HORIZONTAL, command=self.update_threshold).grid(row=1, column=1, sticky=tk.EW, padx=5)
+                 orient=tk.HORIZONTAL, command=self.update_threshold).grid(row=0, column=1, sticky=tk.EW, padx=5)
         self.threshold_label = ttk.Label(frame_settings, text="75")
-        self.threshold_label.grid(row=1, column=2)
+        self.threshold_label.grid(row=0, column=2)
         
         frame_settings.columnconfigure(1, weight=1)
         
@@ -129,7 +143,7 @@ class AttendanceApp:
         control_frame = ttk.Frame(self.live_tab)
         control_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        self.btn_start = ttk.Button(control_frame, text="▶ Start Tracking", 
+        self.btn_start = ttk.Button(control_frame, text="▶ Join Meeting", 
                                      command=self.start_tracking, style="Accent.TButton")
         self.btn_start.pack(side=tk.LEFT, padx=5)
         
@@ -223,229 +237,77 @@ class AttendanceApp:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load file:\n{e}")
                 
-    def auto_detect_region(self):
-        """Auto-detect Zoom window"""
-        self.status_bar.config(text="Searching for Zoom window...")
-        region = self.tracker.find_zoom_window()
-        
-        if region:
-            self.tracker.set_region(region)
-            self.region_status.config(text="✓ Region set (auto)", foreground="green")
-            self.log("Zoom window detected automatically")
-        else:
-            messagebox.showwarning("Not Found", "Zoom window not found. Try manual selection.")
-        
-        self.status_bar.config(text="Ready")
-        
-    def manual_select_region(self):
-        """Manual region selection with visual feedback"""
-        self.status_bar.config(text="Click and drag to select region...")
-        messagebox.showinfo("Manual Selection", 
-                           "Click and drag with your mouse over the participant list area.\n\n"
-                           "Release to confirm selection.")
-        
-        # Create visual feedback during selection
-        def select_thread():
-            import tkinter as tk
-            
-            # Create overlay window for visual feedback
-            overlay = None
-            
-            def create_visual_feedback(start_x, start_y, end_x, end_y):
-                """Create or update visual feedback rectangle"""
-                nonlocal overlay
-                
-                if overlay is None:
-                    # Create overlay window
-                    overlay = tk.Toplevel(self.root)
-                    overlay.title("Selection Feedback")
-                    overlay.attributes('-alpha', 0.3)  # Transparent
-                    overlay.geometry("400x300")  # Will be resized
-                    overlay.configure(bg='blue')
-                    overlay.attributes('-topmost', True)  # Always on top
-                    overlay.overrideredirect(True)  # Remove window decorations
-                    
-                    # Create canvas for drawing selection rectangle
-                    self.overlay_canvas = tk.Canvas(overlay, highlightthickness=0, bg='blue')
-                    self.overlay_canvas.pack(fill=tk.BOTH, expand=True)
-                
-                # Update position and size
-                x1, y1 = min(start_x, end_x), min(start_y, end_y)
-                x2, y2 = max(start_x, end_x), max(start_y, end_y)
-                width = abs(end_x - start_x)
-                height = abs(end_y - start_y)
-                
-                overlay.geometry(f"{width}x{height}+{x1}+{y1}")
-                
-                # Clear and redraw rectangle
-                self.overlay_canvas.delete("all")
-                self.overlay_canvas.create_rectangle(0, 0, width, height, 
-                                                   outline='red', width=2, fill='blue')
-                
-                # Add text
-                self.overlay_canvas.create_text(width//2, 20, text="Selected Area", 
-                                              fill="white", font=("Arial", 10, "bold"))
-            
-            def destroy_visual_feedback():
-                """Destroy visual feedback overlay"""
-                nonlocal overlay
-                if overlay:
-                    try:
-                        overlay.destroy()
-                    except:
-                        pass
-                    overlay = None
-            
-            # Show instruction in main window status bar
-            self.status_bar.config(text="Click and drag to select region... (Visual feedback will appear)")
-            
-            # Create a temporary indicator
-            indicator = tk.Toplevel(self.root)
-            indicator.title("Selecting Region")
-            indicator.geometry("400x100+100+100")
-            indicator.attributes('-topmost', True)
-            indicator.configure(bg='yellow')
-            
-            label = tk.Label(indicator, 
-                           text="Selecting region...\nClick and drag on the screen\nVisual feedback box will appear",
-                           bg='yellow', fg='black', font=('Arial', 10), wraplength=380)
-            label.pack(expand=True, padx=10, pady=10)
-            
-            # Temporarily replace the tracker's get_manual_region method to add visual feedback
-            original_method = self.tracker.get_manual_region
-            
-            def get_manual_region_with_feedback():
-                """Wrapper around get_manual_region with visual feedback"""
-                print("\nDrag over the Zoom PARTICIPANT LIST area...")
-                print("Click and drag with mouse, then release.")
-                
-                selection_start = None
-                selection_end = None
-                
-                def on_move(x, y):
-                    """Callback for mouse movement during dragging"""
-                    if selection_start:
-                        # Update visual feedback
-                        self.root.after(0, lambda: create_visual_feedback(selection_start[0], selection_start[1], x, y))
-                
-                def on_click(x, y, button, pressed):
-                    nonlocal selection_start, selection_end
-                    if pressed:
-                        selection_start = (x, y)
-                        print(f"Selection started at ({x}, {y})")
-                    else:
-                        selection_end = (x, y)
-                        print(f"Selection ended at ({x}, {y})")
-                        return False
-                
-                # Create listeners for both move and click events
-                move_listener = mouse.Listener(on_move=on_move)
-                click_listener = mouse.Listener(on_click=on_click)
-                
-                # Start both listeners
-                move_listener.start()
-                click_listener.start()
-                
-                # Wait for click listener to finish (when mouse is released)
-                click_listener.join()
-                
-                # Stop move listener
-                move_listener.stop()
-                
-                # Destroy visual feedback
-                self.root.after(0, destroy_visual_feedback)
-                
-                if selection_start and selection_end:
-                    x1, y1 = selection_start
-                    x2, y2 = selection_end
-                    
-                    # Print the selected region
-                    width = abs(x2 - x1)
-                    height = abs(y2 - y1)
-                    top = min(y1, y2)
-                    left = min(x1, x2)
-                    print(f"Selected region: Top={top}, Left={left}, Width={width}, Height={height}")
-                    
-                    return {
-                        "top": top,
-                        "left": left,
-                        "width": width,
-                        "height": height
-                    }
-                return None
-            
-            # Replace the method temporarily
-            self.tracker.get_manual_region = get_manual_region_with_feedback
-            
-            try:
-                # Get region from tracker (this will show visual feedback during selection)
-                region = self.tracker.get_manual_region()
-            finally:
-                # Restore original method
-                self.tracker.get_manual_region = original_method
-            
-            # Destroy indicator and visual feedback
-            try:
-                indicator.destroy()
-            except:
-                pass
-            
-            if region:
-                self.tracker.set_region(region)
-                self.root.after(0, lambda: self.region_status.config(text="✓ Region set (manual)", foreground="green"))
-                self.root.after(0, lambda: self.log("Region selected manually"))
-            else:
-                self.root.after(0, lambda: self.log("Region selection cancelled"))
-            
-            self.root.after(0, lambda: self.status_bar.config(text="Ready"))
-        
-        threading.Thread(target=select_thread, daemon=True).start()
+    # Removed auto_detect_region and manual_select_region methods as they are no longer needed
+    # with the new Zoom meeting approach
         
     def start_tracking(self):
-        """Start tracking"""
-        # Don't require region to be set manually - auto-detection will handle it
+        """Start tracking by joining Zoom meeting"""
+        if not ZOOM_MEETING_AVAILABLE:
+            messagebox.showerror("Error", "Zoom meeting functionality not available. Please install selenium and faker.")
+            return
+        
+        # Get meeting details
+        meeting_id = self.meeting_id_var.get().strip()
+        passcode = self.passcode_var.get().strip()
+        participants = self.participants_var.get()
+        
+        if not meeting_id:
+            messagebox.showerror("Error", "Please enter a meeting ID.")
+            return
+        
+        if not passcode:
+            messagebox.showerror("Error", "Please enter a passcode.")
+            return
+        
+        if participants < 1:
+            messagebox.showerror("Error", "Please enter a valid number of participants.")
+            return
+        
         try:
-            self.tracker.start()
+            self.stop_event.clear()
+            self.meeting_active = True
             self.is_tracking = True
             self.btn_start.config(state=tk.DISABLED)
             self.btn_stop.config(state=tk.NORMAL)
-            self.log("Tracking started")
-            self.status_bar.config(text="Tracking active... (Auto-detecting Zoom window)")
+            self.log(f"Joining Zoom meeting {meeting_id} with {participants} participants...")
+            self.status_bar.config(text="Joining Zoom meeting...")
+            
+            # Start meeting thread
+            self.meeting_thread = threading.Thread(
+                target=self._join_zoom_meeting,
+                args=(meeting_id, passcode, participants),
+                daemon=True
+            )
+            self.meeting_thread.start()
+            
+            # Start participant monitoring thread
+            monitor_thread = threading.Thread(target=self._monitor_participants, daemon=True)
+            monitor_thread.start()
+            
         except Exception as e:
-            error_msg = str(e)
-            if "tesseract" in error_msg.lower() or "ocr" in error_msg.lower():
-                messagebox.showerror("Tesseract OCR Error", 
-                                   "Tesseract OCR is not installed or not in PATH.\n\n"
-                                   "Please install Tesseract OCR from:\n"
-                                   "https://github.com/UB-Mannheim/tesseract/wiki\n\n"
-                                   "After installation, restart your computer and try again.")
-            else:
-                messagebox.showerror("Error", f"Failed to start tracking:\n{e}")
+            messagebox.showerror("Error", f"Failed to start tracking:\n{e}")
             
     def stop_tracking(self):
         """Stop tracking"""
-        self.tracker.stop()
+        self.stop_event.set()
+        self.meeting_active = False
         self.is_tracking = False
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
-        self.log("Tracking stopped")
+        self.log("Meeting stopped")
         self.status_bar.config(text="Ready")
         self.generate_report()
         
     def reset_data(self):
         """Reset all data"""
         if messagebox.askyesno("Confirm", "Reset all attendance data?"):
-            self.tracker.reset()
             self.matcher.matched_records = {}
             self.tree.delete(*self.tree.get_children())
             self.update_stats(0, 0, 0)
             self.log("Data reset")
             
-    def update_tile_height(self, value):
-        """Update tile height"""
-        val = int(float(value))
-        self.tile_label.config(text=str(val))
-        self.tracker.set_tile_height(val)
+    # Removed update_tile_height method as it's no longer needed
+    # with the new Zoom meeting approach
         
     def update_threshold(self, value):
         """Update match threshold"""
@@ -453,64 +315,48 @@ class AttendanceApp:
         self.threshold_label.config(text=str(val))
         self.matcher.threshold = val
         
-    def on_tracker_update(self, participants, event_type, changed):
-        """Callback from tracker"""
-        # Update status bar to show window tracking is active
-        if hasattr(self.tracker, '_last_window_title') and self.tracker._last_window_title:
-            # Check if window is still available
-            current_region = self.tracker.find_zoom_window_by_title(self.tracker._last_window_title)
-            if current_region:
-                self.status_bar.config(text=f"Tracking active... (Window: {self.tracker._last_window_title})")
-            else:
-                self.status_bar.config(text=f"Tracking active... (Window '{self.tracker._last_window_title}' not found)")
-        else:
-            self.status_bar.config(text="Tracking active...")
-        
-        # Match names if roll file loaded
-        if self.roll_file_loaded:
-            matches = self.matcher.match_batch(participants)
-        else:
-            matches = {name: {'matched_name': name, 'roll': 'N/A', 'confidence': 0, 'status': 'no_db'} 
-                      for name in participants}
-        
-        # Update UI
-        self.root.after(0, lambda: self.update_participant_list(matches))
-        
-        # Log events
-        if event_type == 'joined' and changed:
-            self.root.after(0, lambda: self.log(f"✓ Joined: {', '.join(changed)}", "green"))
-        elif event_type == 'left' and changed:
-            self.root.after(0, lambda: self.log(f"✗ Left: {', '.join(changed)}", "red"))
+    # Removed on_tracker_update method as it's no longer needed
+    # with the new Zoom meeting approach
             
     def update_participant_list(self, matches):
-        """Update participant treeview"""
+        """Update participant treeview - show all matched participants"""
         self.tree.delete(*self.tree.get_children())
         
         matched_count = 0
-        total_detected = 0
+        total_count = 0
         
+        # Show all participants, but highlight matched ones
         for name, match in matches.items():
-            total_detected += 1
             status = match['status']
+            total_count += 1
             
+            # Display all participants, but differentiate matched vs unmatched
             if status == 'matched':
                 matched_count += 1
                 tag = 'matched'
                 
-                # Only show matched participants in the table
+                # Insert matched participants with roll numbers
                 self.tree.insert('', tk.END, values=(
                     name,
-                    match['roll'],
+                    match['roll'] if match['roll'] and match['roll'] != 'N/A' else 'N/A',
                     f"{match['confidence']:.0f}%",
-                    status.title()
+                    'Matched'
                 ), tags=(tag,))
-            # Skip unknown/unmatched entries (don't show in table)
+            else:
+                # Show unmatched participants with basic info
+                tag = 'unmatched'
+                self.tree.insert('', tk.END, values=(
+                    name,
+                    'N/A',
+                    '0%',
+                    'Unmatched'
+                ), tags=(tag,))
         
         self.tree.tag_configure('matched', foreground='green')
-        self.tree.tag_configure('unknown', foreground='orange')
+        self.tree.tag_configure('unmatched', foreground='gray')
         
-        self.update_stats(matched_count, total_detected, matched_count)
-
+        # Update stats to show all participants
+        self.update_stats(matched_count, total_count, matched_count)
         
     def update_stats(self, active, total, matched):
         """Update statistics"""
@@ -535,8 +381,7 @@ class AttendanceApp:
         self.log_text.config(state=tk.DISABLED)
         
     def generate_report(self):
-        """Generate session report"""
-        data = self.tracker.get_attendance_data()
+        """Generate session report with only matched participants"""
         stats = self.matcher.get_statistics() if self.roll_file_loaded else None
         
         report = "=" * 60 + "\n"
@@ -554,16 +399,23 @@ class AttendanceApp:
         report += "ATTENDANCE DETAILS\n"
         report += "-" * 60 + "\n\n"
         
-        for name in sorted(data['current']):
-            match = self.matcher.matched_records.get(name, {})
-            roll = match.get('roll', 'N/A')
+        # Only show matched participants with roll numbers
+        matched_participants = []
+        for name, match_data in self.matcher.matched_records.items():
+            if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
+                matched_participants.append((name, match_data['roll']))
+        
+        # Sort by roll number
+        matched_participants.sort(key=lambda x: x[1])
+        
+        for name, roll in matched_participants:
             report += f"  • {name:<30} Roll: {roll}\n"
         
         self.report_text.delete(1.0, tk.END)
         self.report_text.insert(1.0, report)
         
     def export_excel(self):
-        """Export to Excel"""
+        """Export only matched participants to Excel"""
         filepath = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel Files", "*.xlsx")]
@@ -571,16 +423,19 @@ class AttendanceApp:
         
         if filepath:
             try:
-                data = self.matcher.export_attendance()
-                df = pd.DataFrame(data)
+                # Filter to only include matched participants with roll numbers
+                all_data = self.matcher.export_attendance()
+                matched_data = [row for row in all_data if row['Status'] == 'Matched' and row['Roll Number'] != 'N/A']
+                
+                df = pd.DataFrame(matched_data)
                 df.to_excel(filepath, index=False)
-                messagebox.showinfo("Success", f"Exported to:\n{filepath}")
-                self.log(f"Exported to Excel: {filepath}")
+                messagebox.showinfo("Success", f"Exported {len(matched_data)} matched participants to:\n{filepath}")
+                self.log(f"Exported {len(matched_data)} matched participants to Excel: {filepath}")
             except Exception as e:
                 messagebox.showerror("Error", f"Export failed:\n{e}")
                 
     def export_csv(self):
-        """Export to CSV"""
+        """Export only matched participants to CSV"""
         filepath = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV Files", "*.csv")]
@@ -588,65 +443,400 @@ class AttendanceApp:
         
         if filepath:
             try:
-                data = self.matcher.export_attendance()
-                df = pd.DataFrame(data)
+                # Filter to only include matched participants with roll numbers
+                all_data = self.matcher.export_attendance()
+                matched_data = [row for row in all_data if row['Status'] == 'Matched' and row['Roll Number'] != 'N/A']
+                
+                df = pd.DataFrame(matched_data)
                 df.to_csv(filepath, index=False)
-                messagebox.showinfo("Success", f"Exported to:\n{filepath}")
-                self.log(f"Exported to CSV: {filepath}")
+                messagebox.showinfo("Success", f"Exported {len(matched_data)} matched participants to:\n{filepath}")
+                self.log(f"Exported {len(matched_data)} matched participants to CSV: {filepath}")
             except Exception as e:
                 messagebox.showerror("Error", f"Export failed:\n{e}")
                 
-    def diagnose_tesseract(self):
-        """Run Tesseract OCR diagnostic"""
-        try:
-            import subprocess
-            import sys
-            import os
-            
-            # Run the diagnostic script
-            result = subprocess.run([
-                sys.executable, 
-                os.path.join(os.path.dirname(__file__), 'diagnose_tesseract.py')
-            ], capture_output=True, text=True, timeout=30)
-            
-            # Show results in a messagebox
-            if result.returncode == 0:
-                messagebox.showinfo("Tesseract Diagnostic", result.stdout)
-            else:
-                messagebox.showerror("Tesseract Diagnostic Error", 
-                                   f"Diagnostic failed:\n{result.stderr}")
-        except Exception as e:
-            # Try to set the path directly and test
-            try:
-                import pytesseract
-                pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-                version = pytesseract.get_tesseract_version()
-                messagebox.showinfo("Tesseract Fix", 
-                                  f"Tesseract found and configured!\nVersion: {version}\n\n"
-                                  "The application should now work correctly.")
-            except Exception as e2:
-                messagebox.showerror("Error", 
-                                   f"Failed to run diagnostic:\n{e}\n\n"
-                                   f"Also failed to configure Tesseract directly:\n{e2}")
-    
     def refresh_zoom_window(self):
-        """Manually refresh Zoom window detection"""
-        self.status_bar.config(text="Searching for Zoom window...")
-        self.root.update_idletasks()  # Force UI update
-        
-        region = self.tracker.find_zoom_window()
-        if region:
-            self.tracker.set_region(region)
-            self.region_status.config(text="✓ Region set (auto)", foreground="green")
-            self.log("Zoom window detected and set automatically")
-            if hasattr(self.tracker, '_last_window_title') and self.tracker._last_window_title:
-                self.status_bar.config(text=f"Tracking active... (Window: {self.tracker._last_window_title})")
-            else:
-                self.status_bar.config(text="Tracking active...")
-        else:
-            self.region_status.config(text="Region not set", foreground="orange")
-            self.status_bar.config(text="Zoom window not found")
-            messagebox.showwarning("Not Found", "Zoom window not found. Make sure Zoom is running and visible.")
+        """Refresh functionality - not applicable with new approach"""
+        messagebox.showinfo("Info", "Refresh not needed with the new Zoom meeting approach.\n\nJust enter your meeting details and click 'Join Meeting'.")
+    
+    def _join_zoom_meeting(self, meeting_id, passcode, num_participants):
+        """Join Zoom meeting with specified parameters"""
+        try:
+            fake = Faker('en_IN')
+            drivers = []
+            
+            self.log(f"Starting {num_participants} participants for meeting {meeting_id}")
+            
+            for i in range(num_participants):
+                if self.stop_event.is_set():
+                    break
+                    
+                try:
+                    # Create WebDriver
+                    options = webdriver.ChromeOptions()
+                    options.add_argument(f'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36')
+                    options.add_experimental_option("detach", True)
+                    options.add_argument("--window-size=1920,1080")
+                    options.add_argument('--no-sandbox')
+                    options.add_argument('--disable-dev-shm-usage')
+                    options.add_argument('--ignore-certificate-errors')
+                    options.add_argument('--allow-running-insecure-content')
+                    options.add_argument('allow-file-access-from-files')
+                    options.add_argument('use-fake-device-for-media-stream')
+                    options.add_argument('use-fake-ui-for-media-stream')
+                    options.add_argument("--disable-extensions")
+                    options.add_argument("--proxy-server='direct://'")
+                    options.add_argument("--proxy-bypass-list=*")
+                    options.add_argument("--start-maximized")
+                    
+                    # Disable audio and video for silent participation
+                    options.add_argument("--use-fake-ui-for-media-stream")
+                    options.add_argument("--disable-audio-output")
+                    options.add_argument("--disable-background-media-suspend")
+                    options.add_argument("--disable-renderer-backgrounding")
+                    options.add_argument("--autoplay-policy=no-user-gesture-required")
+                    
+                    # Additional options for Zoom meetings
+                    options.add_argument("--disable-features=TranslateUI")
+                    options.add_argument("--disable-ipc-flooding-protection")
+                    options.add_argument("--disable-backgrounding-occluded-windows")
+                    options.add_argument("--disable-breakpad")
+                    
+                    # Try to use webdriver-manager
+                    try:
+                        service = Service(ChromeDriverManager().install())
+                        driver = webdriver.Chrome(service=service, options=options)
+                    except Exception as e:
+                        self.log(f"Error with ChromeDriver manager: {e}. Trying without Service...")
+                        try:
+                            driver = webdriver.Chrome(options=options)
+                        except Exception as e2:
+                            self.log(f"FATAL: Could not start Chrome: {e2}")
+                            return
+                    
+                    drivers.append(driver)
+                    
+                    # Navigate to meeting
+                    driver.get(f'https://app.zoom.us/wc/join/{meeting_id}')
+                    time.sleep(2)
+                    
+                    # Fill passcode if present
+                    try:
+                        inp2 = WebDriverWait(driver, 3).until(ec.presence_of_element_located((By.ID, 'input-for-pwd')))
+                        inp2.clear()
+                        inp2.send_keys(passcode)
+                    except Exception:
+                        pass
+                    
+                    # Fill display name
+                    user_name = fake.name()
+                    try:
+                        inp = WebDriverWait(driver, 5).until(ec.presence_of_element_located((By.ID, 'input-for-name')))
+                        inp.clear()
+                        inp.send_keys(f"{user_name}")
+                    except Exception:
+                        # fallback to common text input
+                        try:
+                            inp = driver.find_element(By.CSS_SELECTOR, 'input[type="text"]')
+                            inp.clear()
+                            inp.send_keys(f"{user_name}")
+                        except Exception:
+                            pass
+                    
+                    # Automatically mute audio and video before joining
+                    try:
+                        # Mute microphone using JavaScript
+                        driver.execute_script("""
+                            // Try to find and click mute microphone button
+                            var micButtons = document.querySelectorAll('[class*="audio"], [aria-label*="microphone"], [aria-label*="Microphone"]');
+                            for (var i = 0; i < micButtons.length; i++) {
+                                var button = micButtons[i];
+                                if (button.textContent.includes('Mute') || button.textContent.includes('mute') || 
+                                    button.getAttribute('aria-label')?.includes('Mute') || button.getAttribute('aria-label')?.includes('mute')) {
+                                    if (!button.disabled) {
+                                        button.click();
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        """)
+                        self.log(f"Attempted to mute microphone for {user_name}")
+                    except Exception as e:
+                        self.log(f"Could not mute microphone for {user_name}: {e}")
+                    
+                    try:
+                        # Turn off video using JavaScript
+                        driver.execute_script("""
+                            // Try to find and click turn off video button
+                            var videoButtons = document.querySelectorAll('[class*="video"], [aria-label*="video"], [aria-label*="Video"]');
+                            for (var i = 0; i < videoButtons.length; i++) {
+                                var button = videoButtons[i];
+                                if (button.textContent.includes('Turn off') || button.textContent.includes('turn off') || 
+                                    button.getAttribute('aria-label')?.includes('Turn off') || button.getAttribute('aria-label')?.includes('turn off')) {
+                                    if (!button.disabled) {
+                                        button.click();
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        """)
+                        self.log(f"Attempted to turn off video for {user_name}")
+                    except Exception as e:
+                        self.log(f"Could not turn off video for {user_name}: {e}")
+                    
+                    try:
+                        btn2 = WebDriverWait(driver, 5).until(ec.element_to_be_clickable((By.CLASS_NAME, 'zm-btn')))
+                        try:
+                            btn2.click()
+                        except Exception:
+                            driver.execute_script("arguments[0].click();", btn2)
+                        time.sleep(1)
+                    except Exception as e:
+                        pass
+                    
+                    try:
+                        WebDriverWait(driver, 10).until(ec.element_to_be_clickable((By.CSS_SELECTOR, '#preview-audio-control-button')))
+                        audio_btn = driver.find_element(By.CSS_SELECTOR, '#preview-audio-control-button')
+                        try:
+                            audio_btn.click()
+                        except Exception:
+                            driver.execute_script("arguments[0].click();", audio_btn)
+                        time.sleep(0.5)
+                    except:
+                        pass
+                    
+                    try:
+                        btn3 = WebDriverWait(driver, 10).until(ec.element_to_be_clickable((By.CLASS_NAME, "preview-join-button")))
+                        try:
+                            btn3.click()
+                        except Exception:
+                            driver.execute_script("arguments[0].click();", btn3)
+                        time.sleep(1)
+                    except Exception as e:
+                        pass
+                    
+                    try:
+                        driver.find_element(By.XPATH, '//*[@id="voip-tab"]/div/button').click()
+                    except Exception as e:
+                        pass
+                    time.sleep(0.5)
+                    
+                    # Mute audio and video after joining
+                    try:
+                        # Mute microphone after joining
+                        mute_buttons = driver.find_elements(By.CSS_SELECTOR, '[aria-label*="mute"], [aria-label*="Mute"], [class*="mic"], [class*="Mic"]')
+                        for button in mute_buttons:
+                            if 'mute' in button.get_attribute('aria-label').lower() or 'mic' in button.get_attribute('class').lower():
+                                if button.is_enabled() and button.is_displayed():
+                                    button.click()
+                                    self.log(f"Muted microphone for {user_name} after joining")
+                                    break
+                    except Exception as e:
+                        self.log(f"Could not mute microphone after joining for {user_name}: {e}")
+                    
+                    try:
+                        # Turn off video after joining
+                        video_buttons = driver.find_elements(By.CSS_SELECTOR, '[aria-label*="video"], [aria-label*="Video"], [class*="video"], [class*="Video"]')
+                        for button in video_buttons:
+                            if 'video' in button.get_attribute('aria-label').lower() and 'off' in button.get_attribute('aria-label').lower():
+                                if button.is_enabled() and button.is_displayed():
+                                    button.click()
+                                    self.log(f"Turned off video for {user_name} after joining")
+                                    break
+                            elif 'video' in button.get_attribute('class').lower() and 'off' in button.get_attribute('class').lower():
+                                if button.is_enabled() and button.is_displayed():
+                                    button.click()
+                                    self.log(f"Turned off video for {user_name} after joining")
+                                    break
+                    except Exception as e:
+                        self.log(f"Could not turn off video after joining for {user_name}: {e}")
+                    
+                    # Use JavaScript to ensure audio and video are muted
+                    try:
+                        driver.execute_script("""
+                            // Mute audio
+                            if (typeof APP !== 'undefined' && APP.conference) {
+                                APP.conference.toggleAudioMuted();
+                            }
+                            
+                            // Turn off video
+                            if (typeof APP !== 'undefined' && APP.conference) {
+                                APP.conference.toggleVideoMuted();
+                            }
+                            
+                            // Alternative Zoom-specific muting
+                            var muteButton = document.querySelector('[aria-label*="Mute" i]');
+                            if (muteButton) muteButton.click();
+                            
+                            var videoButton = document.querySelector('[aria-label*="Video" i][aria-label*="Off" i]');
+                            if (videoButton) videoButton.click();
+                        """)
+                        self.log(f"Ensured silent participation for {user_name}")
+                    except Exception as e:
+                        self.log(f"Could not ensure silent participation for {user_name}: {e}")
+                    
+                    self.log(f"Participant {i+1} ({user_name}) joined meeting")
+                    
+                except Exception as e:
+                    self.log(f"Error joining participant {i+1}: {e}")
+                    continue
+            
+            # Keep drivers alive and periodically check for participants
+            check_interval = 0
+            while not self.stop_event.is_set():
+                # Fetch participants from one of the drivers
+                if drivers and check_interval <= 0:
+                    try:
+                        participants = self._fetch_participants(drivers[0])
+                        if participants:
+                            # Put participants in queue for processing
+                            self.participants_queue.put(participants)
+                            self.log(f"Fetched {len(participants)} participants")
+                    except Exception as e:
+                        self.log(f"Error fetching participants: {e}")
+                    
+                    # Reset check interval (check every 10 seconds)
+                    check_interval = 10
+                
+                # Decrement check interval
+                check_interval -= 1
+                time.sleep(1)
+            
+            # Quit all drivers when stopping
+            for driver in drivers:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                    
+            self.log("Meeting ended")
+            
+        except Exception as e:
+            self.log(f"Error in meeting thread: {e}")
+    
+    def _fetch_participants(self, driver):
+        """Fetch participants from Zoom meeting"""
+        try:
+            time.sleep(3)  # Wait for meeting to fully load
+            
+            # Try to open Participants panel
+            open_selectors = [
+                'button[aria-label*="Participants"]',
+                'button[aria-label*="participants"]',
+                'button[title*="Participants"]',
+                'button[title*="participants"]',
+                'button[aria-label*="Participants and chat"]',
+                'button[aria-label="Participants"]',
+                'button.participants-tab',
+            ]
+            
+            for sel in open_selectors:
+                try:
+                    btn = driver.find_element(By.CSS_SELECTOR, sel)
+                    try:
+                        btn.click()
+                    except:
+                        driver.execute_script("arguments[0].click();", btn)
+                    time.sleep(1)
+                    break
+                except Exception:
+                    pass
+            
+            # Try XPath selectors as fallback
+            xpath_selectors = [
+                '//button[contains(@aria-label, "Participant")]',
+                '//*[contains(text(), "Participant")]',
+            ]
+            
+            for xpath in xpath_selectors:
+                try:
+                    btn = driver.find_element(By.XPATH, xpath)
+                    try:
+                        btn.click()
+                    except:
+                        driver.execute_script("arguments[0].click();", btn)
+                    time.sleep(1)
+                    break
+                except Exception:
+                    pass
+            
+            # Candidate selectors for participant name elements
+            name_selectors = [
+                '#zmu-portal-dropdown-participant-list li',  # Zoom web client structure
+                '.participants-section-container_wrapper li',
+                'div[class*="participant"] span',
+                'div[class*="participant-name"]',
+                '.participants-item__display-name',
+                '.participants-item__name',
+                '.participant-name',
+                '.name',
+                '.participants-list li',
+                '.participants-list div',
+                '[data-testid*="participant"]',
+                '.zm-participant-name',
+            ]
+            
+            names = []
+            for sel in name_selectors:
+                try:
+                    elems = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for e in elems:
+                        text = e.text.strip()
+                        if text and text not in names and len(text) > 1:
+                            # Clean up the participant name
+                            # Remove (Host, me) and similar annotations
+                            import re
+                            text = re.sub(r'\(.*?(?:Host|Me|me).*?\)', '', text, flags=re.IGNORECASE).strip()
+                            if text and text not in names:
+                                names.append(text)
+                    if names:
+                        break
+                except Exception:
+                    pass
+            
+            return names
+            
+        except Exception as e:
+            self.log(f"Error fetching participants: {e}")
+            return []
+    
+    def _monitor_participants(self):
+        """Monitor participant queue and update UI continuously"""
+        while not self.stop_event.is_set():
+            try:
+                # Process all available participant data in the queue
+                processed = False
+                while not self.participants_queue.empty():
+                    try:
+                        participants = self.participants_queue.get_nowait()
+                        if participants:
+                            # Match names if roll file loaded
+                            if self.roll_file_loaded:
+                                matches = self.matcher.match_batch(participants)
+                            else:
+                                matches = {name: {'matched_name': name, 'roll': 'N/A', 'confidence': 0, 'status': 'no_db'} 
+                                          for name in participants}
+                            
+                            # Update UI
+                            self.root.after(0, lambda m=matches: self.update_participant_list(m))
+                            
+                            # Log event
+                            self.root.after(0, lambda p=len(participants): self.log(f"Participants updated: {p} detected"))
+                            processed = True
+                    except queue.Empty:
+                        break
+                
+                # If we processed data, add a small delay to prevent excessive CPU usage
+                if processed:
+                    time.sleep(0.1)
+                else:
+                    # If no data, wait a bit longer
+                    time.sleep(0.5)
+                    
+            except Exception as e:
+                self.log(f"Error in participant monitor: {e}")
+                time.sleep(1)  # Wait longer on error to prevent spam
     
     def show_about(self):
         """Show about dialog"""
@@ -654,7 +844,7 @@ class AttendanceApp:
                            "Zoom Attendance System v1.0\n\n"
                            "Automatically track Zoom meeting attendance\n"
                            "with roll number matching.\n\n"
-                           "Built with Python, Tkinter, OpenCV, and Tesseract OCR")
+                           "Built with Python, Tkinter, Selenium, and RapidFuzz")
 
 
 def main():

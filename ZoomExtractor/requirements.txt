@@ -1,12 +1,8 @@
-opencv-python
-numpy
-mss
-pytesseract
-pygetwindow
-pynput
+selenium
+webdriver-manager
+faker
 pandas
 openpyxl
 rapidfuzz
-pyinstaller
 pywin32
 pillow

@@ -119,29 +119,52 @@ class RollMatcher:
         print(f"Matching name: '{detected_name}' -> processed: '{processed_name}'")
         
         # STRATEGY 1: Look for Roll Number in the Zoom Name
-        # Extract all numbers from the text
+        # Only do this if the detected name looks like it might contain a roll number
+        # (e.g., "3. Name" or "Name 3" but not "Participants (3)")
         import re
-        numbers = re.findall(r'\d+', detected_name)
         
         # Create a reverse lookup map (Roll -> Name)
         roll_to_name = {v: k for k, v in self.database.items()}
         
-        for num in numbers:
-            # Clean number (remove leading zeros for matching)
-            clean_num = str(int(num))
-            original_num = num
+        # Look for roll numbers in common formats
+        # Format 1: "3. Name" or "3 Name"
+        # Format 2: "Name 3"
+        
+        # Check if this looks like a numbered list item (e.g., "3. Name")
+        list_pattern = r'^(\d+)\.?\s+(.+)$'
+        list_match = re.match(list_pattern, detected_name.strip())
+        
+        if list_match:
+            roll_num = list_match.group(1)
+            name_part = list_match.group(2)
+            # Check if this roll number exists in our database
+            if roll_num in roll_to_name:
+                matched_db_name = roll_to_name[roll_num]
+                print(f"  ✓ FOUND ROLL NUMBER MATCH (list format): {roll_num} -> {matched_db_name}")
+                return {
+                    'matched_name': matched_db_name,
+                    'roll': self.database[matched_db_name],
+                    'confidence': 100,  # Perfect match by ID
+                    'status': 'matched'
+                }
+        
+        # Check if this ends with a roll number (e.g., "Name 3")
+        # But avoid matching things like "Participants (3)" or "Room 3"
+        end_pattern = r'^(.+)\s+(\d+)$'
+        end_match = re.match(end_pattern, detected_name.strip())
+        
+        if end_match:
+            name_part = end_match.group(1)
+            roll_num = end_match.group(2)
+            # Only accept if the roll number is in our database AND the name part looks reasonable
+            # (avoid matching generic terms like "Participants", "Room", "Meeting", etc.)
+            forbidden_words = ['participant', 'meeting', 'room', 'group', 'section', 'level', 'session']
+            name_lower = name_part.lower()
+            is_forbidden = any(word in name_lower for word in forbidden_words)
             
-            # Check if this number exists in our database
-            # Try exact match, or match with/without leading zeros
-            matched_db_name = None
-            
-            if original_num in roll_to_name:
-                matched_db_name = roll_to_name[original_num]
-            elif clean_num in roll_to_name:
-                matched_db_name = roll_to_name[clean_num]
-                
-            if matched_db_name:
-                print(f"  ✓ FOUND ROLL NUMBER MATCH: {original_num} -> {matched_db_name}")
+            if roll_num in roll_to_name and len(name_part) > 3 and not is_forbidden:
+                matched_db_name = roll_to_name[roll_num]
+                print(f"  ✓ FOUND ROLL NUMBER MATCH (end format): {roll_num} -> {matched_db_name}")
                 return {
                     'matched_name': matched_db_name,
                     'roll': self.database[matched_db_name],
