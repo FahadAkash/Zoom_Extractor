@@ -32,8 +32,53 @@ except ImportError:
 class AttendanceApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Zoom Attendance System")
-        self.root.geometry("900x700")
+        self.root.title("Zoom Attendance System - Automated Attendance Tracker")
+        self.root.geometry("1000x750")
+        self.root.minsize(900, 700)
+        
+        # Set modern theme colors
+        self.root.style = ttk.Style()
+        self.root.style.theme_use('clam')
+        
+        # Configure modern color scheme
+        self.root.style.configure('TFrame', background='#f0f0f0')
+        self.root.style.configure('TLabelFrame', background='#f0f0f0', foreground='#2c3e50', font=('Arial', 10, 'bold'))
+        self.root.style.configure('TLabelFrame.Label', background='#f0f0f0', foreground='#2c3e50', font=('Arial', 10, 'bold'))
+        
+        # Configure custom styles with modern colors
+        self.root.style.configure('Accent.TButton', 
+                                foreground='white', 
+                                background='#3498db', 
+                                font=('Arial', 9, 'bold'),
+                                padding=6)
+        self.root.style.map('Accent.TButton',
+                           background=[('active', '#2980b9')],
+                           foreground=[('active', 'white')])
+        
+        self.root.style.configure('TButton', 
+                                foreground='#2c3e50', 
+                                background='#ecf0f1', 
+                                font=('Arial', 9),
+                                padding=6)
+        self.root.style.map('TButton',
+                           background=[('active', '#bdc3c7')],
+                           foreground=[('active', '#2c3e50')])
+        
+        self.root.style.configure('Treeview', 
+                                background='white',
+                                foreground='#2c3e50',
+                                fieldbackground='white',
+                                font=('Arial', 9))
+        self.root.style.configure('Treeview.Heading', 
+                                background='#3498db',
+                                foreground='white',
+                                font=('Arial', 9, 'bold'))
+        self.root.style.map('Treeview.Heading',
+                           background=[('active', '#2980b9')])
+        
+        self.root.style.configure('TScrollbar', 
+                                background='#bdc3c7',
+                                troughcolor='#ecf0f1')
         
         # Initialize components
         self.matcher = RollMatcher(threshold=75)
@@ -60,18 +105,26 @@ class AttendanceApp:
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Load Roll Numbers", command=self.load_roll_file)
+        file_menu.add_command(label="Load Roll Numbers", command=self.load_roll_file, accelerator="Ctrl+O")
         file_menu.add_command(label="Load from Google Sheet", command=self.load_google_sheet)
         file_menu.add_separator()
-        file_menu.add_command(label="Export to Excel", command=self.export_excel)
-        file_menu.add_command(label="Export to CSV", command=self.export_csv)
+        file_menu.add_command(label="Export to Excel", command=self.export_excel, accelerator="Ctrl+E")
+        file_menu.add_command(label="Export to CSV", command=self.export_csv, accelerator="Ctrl+Shift+E")
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
+        file_menu.add_command(label="Exit", command=self.root.quit, accelerator="Ctrl+Q")
         
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="User Guide", command=self.show_help)
         help_menu.add_command(label="About", command=self.show_about)
+        
+        # Bind keyboard shortcuts
+        self.root.bind('<Control-o>', lambda e: self.load_roll_file())
+        self.root.bind('<Control-e>', lambda e: self.export_excel())
+        self.root.bind('<Control-E>', lambda e: self.export_excel())
+        self.root.bind('<Control-q>', lambda e: self.root.quit())
+        self.root.bind('<Control-Q>', lambda e: self.root.quit())
         
     def create_tabs(self):
         """Create tabbed interface"""
@@ -95,142 +148,195 @@ class AttendanceApp:
         
     def create_setup_tab(self):
         """Setup tab - configuration"""
-        # Roll number file section
-        frame_roll = ttk.LabelFrame(self.setup_tab, text="Roll Number Database", padding=10)
-        frame_roll.pack(fill=tk.X, padx=10, pady=10)
+        # Add welcome message
+        welcome_frame = ttk.Frame(self.setup_tab, padding=10)
+        welcome_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(frame_roll, text="Load file with format: 'Name Roll'").pack(anchor=tk.W)
+        welcome_label = ttk.Label(welcome_frame, 
+                                 text="Welcome to Zoom Attendance System!\nConfigure your settings below to start tracking attendance.", 
+                                 font=('Arial', 10), 
+                                 justify=tk.CENTER)
+        welcome_label.pack()
+        
+        # Roll number file section
+        frame_roll = ttk.LabelFrame(self.setup_tab, text="Student Database", padding=15)
+        frame_roll.pack(fill=tk.X, padx=15, pady=10)
+        
+        ttk.Label(frame_roll, text="Load student data with format: 'Name Roll'", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
         ttk.Label(frame_roll, text="Example: Fahad Akash 08", font=('Arial', 9, 'italic')).pack(anchor=tk.W)
         
         btn_frame = ttk.Frame(frame_roll)
-        btn_frame.pack(fill=tk.X, pady=5)
+        btn_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Button(btn_frame, text="Browse File", command=self.load_roll_file).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="From Google Sheet", command=self.load_google_sheet).pack(side=tk.LEFT, padx=5)
-        self.roll_status = ttk.Label(btn_frame, text="No file loaded", foreground="red")
-        self.roll_status.pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="📁 Browse File", command=self.load_roll_file).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="🔗 From Google Sheet", command=self.load_google_sheet).pack(side=tk.LEFT, padx=5)
+        self.roll_status = ttk.Label(btn_frame, text="No file loaded", foreground="red", font=('Arial', 9))
+        self.roll_status.pack(side=tk.LEFT, padx=10)
         
         # Zoom Meeting Details
-        frame_meeting = ttk.LabelFrame(self.setup_tab, text="Zoom Meeting Details", padding=10)
-        frame_meeting.pack(fill=tk.X, padx=10, pady=10)
+        frame_meeting = ttk.LabelFrame(self.setup_tab, text="Zoom Meeting Configuration", padding=15)
+        frame_meeting.pack(fill=tk.X, padx=15, pady=10)
         
         # Meeting ID
-        ttk.Label(frame_meeting, text="Meeting ID:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(frame_meeting, text="Meeting ID:", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W, pady=8)
         self.meeting_id_var = tk.StringVar()
-        ttk.Entry(frame_meeting, textvariable=self.meeting_id_var, width=20).grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(frame_meeting, textvariable=self.meeting_id_var, width=25, font=('Arial', 10)).grid(row=0, column=1, sticky=tk.W, padx=5)
         
         # Passcode
-        ttk.Label(frame_meeting, text="Passcode:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(frame_meeting, text="Passcode:", font=('Arial', 9)).grid(row=1, column=0, sticky=tk.W, pady=8)
         self.passcode_var = tk.StringVar()
-        ttk.Entry(frame_meeting, textvariable=self.passcode_var, width=20, show="*").grid(row=1, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(frame_meeting, textvariable=self.passcode_var, width=25, show="●", font=('Arial', 10)).grid(row=1, column=1, sticky=tk.W, padx=5)
         
         # Number of Participants
-        ttk.Label(frame_meeting, text="Participants:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(frame_meeting, text="Participants:", font=('Arial', 9)).grid(row=2, column=0, sticky=tk.W, pady=8)
         self.participants_var = tk.IntVar(value=1)
-        ttk.Spinbox(frame_meeting, from_=1, to=100, textvariable=self.participants_var, width=10).grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Spinbox(frame_meeting, from_=1, to=100, textvariable=self.participants_var, width=10, font=('Arial', 10)).grid(row=2, column=1, sticky=tk.W, padx=5)
         
         # Settings
-        frame_settings = ttk.LabelFrame(self.setup_tab, text="Settings", padding=10)
-        frame_settings.pack(fill=tk.X, padx=10, pady=10)
+        frame_settings = ttk.LabelFrame(self.setup_tab, text="Advanced Settings", padding=15)
+        frame_settings.pack(fill=tk.X, padx=15, pady=10)
         
-        ttk.Label(frame_settings, text="Match Threshold (%):").grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(frame_settings, text="Match Threshold (%):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W, pady=8)
         self.threshold_var = tk.IntVar(value=75)
         ttk.Scale(frame_settings, from_=50, to=100, variable=self.threshold_var, 
-                 orient=tk.HORIZONTAL, command=self.update_threshold).grid(row=0, column=1, sticky=tk.EW, padx=5)
-        self.threshold_label = ttk.Label(frame_settings, text="75")
-        self.threshold_label.grid(row=0, column=2)
+                 orient=tk.HORIZONTAL, command=self.update_threshold, length=200).grid(row=0, column=1, sticky=tk.EW, padx=5)
+        self.threshold_label = ttk.Label(frame_settings, text="75", font=('Arial', 9, 'bold'))
+        self.threshold_label.grid(row=0, column=2, padx=10)
         
         # Continuous Save Option
         self.continuous_save_var = tk.BooleanVar(value=False)
-        continuous_save_check = ttk.Checkbutton(frame_settings, text="Enable Continuous Save (Auto-save report periodically)", 
+        continuous_save_check = ttk.Checkbutton(frame_settings, 
+                                               text="Enable Continuous Save (Auto-save report periodically)", 
                                                variable=self.continuous_save_var, 
-                                               command=self.toggle_continuous_save)
+                                               command=self.toggle_continuous_save,
+                                               style='Accent.TCheckbutton')
         continuous_save_check.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=5)
+        
+        # Add help text
+        help_label = ttk.Label(frame_settings, 
+                              text="Tip: Higher threshold = stricter matching\n"
+                              "Continuous save protects against data loss",
+                              font=('Arial', 8), 
+                              foreground='gray')
+        help_label.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=5)
         
         frame_settings.columnconfigure(1, weight=1)
         
     def create_live_tab(self):
         """Live tracking tab"""
+        # Header
+        header_frame = ttk.Frame(self.live_tab, padding=10)
+        header_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        header_label = ttk.Label(header_frame, 
+                                text="Live Attendance Tracking\nMonitor participants in real-time during Zoom meetings", 
+                                font=('Arial', 11), 
+                                justify=tk.CENTER)
+        header_label.pack()
+        
         # Controls
-        control_frame = ttk.Frame(self.live_tab)
-        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        control_frame = ttk.LabelFrame(self.live_tab, text="Meeting Controls", padding=15)
+        control_frame.pack(fill=tk.X, padx=15, pady=10)
         
         self.btn_start = ttk.Button(control_frame, text="▶ Join Meeting", 
                                      command=self.start_tracking, style="Accent.TButton")
-        self.btn_start.pack(side=tk.LEFT, padx=5)
+        self.btn_start.pack(side=tk.LEFT, padx=10)
         
-        self.btn_stop = ttk.Button(control_frame, text="⏹ Stop", 
+        self.btn_stop = ttk.Button(control_frame, text="⏹ Stop Tracking", 
                                     command=self.stop_tracking, state=tk.DISABLED)
-        self.btn_stop.pack(side=tk.LEFT, padx=5)
+        self.btn_stop.pack(side=tk.LEFT, padx=10)
         
-        self.btn_reset = ttk.Button(control_frame, text="Reset Data", command=self.reset_data)
-        self.btn_reset.pack(side=tk.LEFT, padx=5)
+        self.btn_reset = ttk.Button(control_frame, text="↺ Reset Data", command=self.reset_data)
+        self.btn_reset.pack(side=tk.LEFT, padx=10)
         
         # Stats
-        stats_frame = ttk.LabelFrame(self.live_tab, text="Statistics", padding=10)
-        stats_frame.pack(fill=tk.X, padx=10, pady=5)
+        stats_frame = ttk.LabelFrame(self.live_tab, text="Attendance Statistics", padding=15)
+        stats_frame.pack(fill=tk.X, padx=15, pady=10)
         
-        self.stat_active = ttk.Label(stats_frame, text="Active: 0", font=('Arial', 12, 'bold'))
-        self.stat_active.pack(side=tk.LEFT, padx=20)
+        self.stat_active = ttk.Label(stats_frame, text="Active: 0", font=('Arial', 14, 'bold'), foreground='#3498db')
+        self.stat_active.pack(side=tk.LEFT, padx=25)
         
-        self.stat_total = ttk.Label(stats_frame, text="Total Detected: 0", font=('Arial', 12))
-        self.stat_total.pack(side=tk.LEFT, padx=20)
+        self.stat_total = ttk.Label(stats_frame, text="Total Detected: 0", font=('Arial', 14, 'bold'), foreground='#f39c12')
+        self.stat_total.pack(side=tk.LEFT, padx=25)
         
-        self.stat_matched = ttk.Label(stats_frame, text="Matched: 0", font=('Arial', 12))
-        self.stat_matched.pack(side=tk.LEFT, padx=20)
+        self.stat_matched = ttk.Label(stats_frame, text="Matched: 0", font=('Arial', 14, 'bold'), foreground='#27ae60')
+        self.stat_matched.pack(side=tk.LEFT, padx=25)
         
         # Participant list
-        list_frame = ttk.LabelFrame(self.live_tab, text="Current Participants", padding=10)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        list_frame = ttk.LabelFrame(self.live_tab, text="Participant List", padding=10)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         # Treeview
         columns = ('Name', 'Roll', 'Confidence', 'Status')
-        self.tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=15)
+        self.tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=12)
         
-        self.tree.heading('Name', text='Detected Name')
+        self.tree.heading('Name', text='Participant Name')
         self.tree.heading('Roll', text='Roll Number')
         self.tree.heading('Confidence', text='Match %')
-        self.tree.heading('Status', text='Status')
+        self.tree.heading('Status', text='Match Status')
         
-        self.tree.column('Name', width=250)
-        self.tree.column('Roll', width=100)
+        self.tree.column('Name', width=300)
+        self.tree.column('Roll', width=120)
         self.tree.column('Confidence', width=100)
-        self.tree.column('Status', width=100)
+        self.tree.column('Status', width=120)
         
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscroll=scrollbar.set)
+        # Configure treeview tags for styling
+        self.tree.tag_configure('matched', foreground='#27ae60', background='#e8f5e9', font=('Arial', 9, 'bold'))
+        self.tree.tag_configure('unmatched', foreground='#7f8c8d', background='#f8f9fa')
+        
+        scrollbar_v = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        scrollbar_h = ttk.Scrollbar(list_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.tree.configure(yscroll=scrollbar_v.set, xscroll=scrollbar_h.set)
         
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_v.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_h.pack(side=tk.BOTTOM, fill=tk.X)
         
         # Event log
-        log_frame = ttk.LabelFrame(self.live_tab, text="Event Log", padding=5)
-        log_frame.pack(fill=tk.X, padx=10, pady=5)
+        log_frame = ttk.LabelFrame(self.live_tab, text="System Events", padding=10)
+        log_frame.pack(fill=tk.X, padx=15, pady=10)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=5, state=tk.DISABLED)
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=6, state=tk.DISABLED, font=('Consolas', 9))
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
     def create_report_tab(self):
         """Reports tab"""
-        frame = ttk.Frame(self.report_tab, padding=10)
-        frame.pack(fill=tk.BOTH, expand=True)
+        # Header
+        header_frame = ttk.Frame(self.report_tab, padding=10)
+        header_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(frame, text="Session Report", font=('Arial', 14, 'bold')).pack(pady=10)
+        header_label = ttk.Label(header_frame, 
+                                text="Attendance Report\nView, export, or copy attendance data", 
+                                font=('Arial', 12), 
+                                justify=tk.CENTER)
+        header_label.pack()
         
-        self.report_text = scrolledtext.ScrolledText(frame, height=20, font=('Courier', 10))
-        self.report_text.pack(fill=tk.BOTH, expand=True, pady=10)
+        frame = ttk.LabelFrame(self.report_tab, text="Attendance Summary", padding=15)
+        frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        ttk.Label(frame, text="Session Report", font=('Arial', 16, 'bold')).pack(pady=10)
+        
+        self.report_text = scrolledtext.ScrolledText(frame, height=20, font=('Consolas', 10))
+        self.report_text.pack(fill=tk.BOTH, expand=True, pady=15)
         
         btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill=tk.X, pady=5)
+        btn_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Button(btn_frame, text="Refresh Report", command=self.generate_report).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Export Excel", command=self.export_excel).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Export CSV", command=self.export_csv).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Copy to Clipboard", command=self.copy_attendance_to_clipboard).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="🔄 Refresh Report", command=self.generate_report).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_frame, text="📊 Export Excel", command=self.export_excel).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_frame, text="📑 Export CSV", command=self.export_csv).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_frame, text="📋 Copy to Clipboard", command=self.copy_attendance_to_clipboard).pack(side=tk.LEFT, padx=8)
         
     def create_status_bar(self):
         """Status bar at bottom"""
-        self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar = ttk.Label(self.root, 
+                                  text="Ready - Zoom Attendance System v1.0", 
+                                  relief=tk.SUNKEN, 
+                                  anchor=tk.W, 
+                                  padding=5,
+                                  background='#ecf0f1',
+                                  foreground='#2c3e50',
+                                  font=('Arial', 9))
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         
     # Event handlers
@@ -246,7 +352,7 @@ class AttendanceApp:
                 count = self.matcher.load_from_file(filepath)
                 self.roll_file_loaded = True
                 self.roll_status.config(text=f"✓ {count} records loaded", foreground="green")
-                self.log(f"Loaded {count} roll numbers from file")
+                self.log(f"Loaded {count} roll numbers from file", "success")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load file:\n{e}")
                 
@@ -282,7 +388,7 @@ class AttendanceApp:
                     count = self.matcher.load_from_google_sheet(url)
                     self.roll_file_loaded = True
                     self.roll_status.config(text=f"✓ {count} records loaded", foreground="green")
-                    self.log(f"Loaded {count} roll numbers from Google Sheet")
+                    self.log(f"Loaded {count} roll numbers from Google Sheet", "success")
                     dialog.destroy()
                 except Exception as e:
                     messagebox.showerror("Error", f"Failed to load Google Sheet:\n{e}")
@@ -325,7 +431,7 @@ class AttendanceApp:
             
             # Copy to clipboard
             pyperclip.copy(formatted_text)
-            self.log("Attendance data copied to clipboard")
+            self.log("Attendance data copied to clipboard", "success")
             
         except Exception as e:
             self.log(f"Error copying to clipboard: {e}")
@@ -363,7 +469,7 @@ class AttendanceApp:
             self.is_tracking = True
             self.btn_start.config(state=tk.DISABLED)
             self.btn_stop.config(state=tk.NORMAL)
-            self.log(f"Joining Zoom meeting {meeting_id} with {participants} participants...")
+            self.log(f"Joining Zoom meeting {meeting_id} with {participants} participants...", "info")
             self.status_bar.config(text="Joining Zoom meeting...")
             
             # Start meeting thread
@@ -388,7 +494,7 @@ class AttendanceApp:
         self.is_tracking = False
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
-        self.log("Meeting stopped")
+        self.log("Meeting stopped", "warning")
         self.status_bar.config(text="Ready")
         self.generate_report()
         
@@ -398,7 +504,7 @@ class AttendanceApp:
             self.matcher.matched_records = {}
             self.tree.delete(*self.tree.get_children())
             self.update_stats(0, 0, 0)
-            self.log("Data reset")
+            self.log("Data reset", "warning")
             
     # Removed update_tile_height method as it's no longer needed
     # with the new Zoom meeting approach
@@ -413,9 +519,9 @@ class AttendanceApp:
         """Toggle continuous save feature"""
         self.continuous_save_enabled = self.continuous_save_var.get()
         if self.continuous_save_enabled:
-            self.log("Continuous save enabled")
+            self.log("Continuous save enabled", "success")
         else:
-            self.log("Continuous save disabled")
+            self.log("Continuous save disabled", "warning")
         
     # Removed on_tracker_update method as it's no longer needed
     # with the new Zoom meeting approach
@@ -454,8 +560,10 @@ class AttendanceApp:
                     'Unmatched'
                 ), tags=(tag,))
         
-        self.tree.tag_configure('matched', foreground='green')
-        self.tree.tag_configure('unmatched', foreground='gray')
+        # Tags are configured in create_live_tab method
+        
+        # Update status bar with participant count
+        self.status_bar.config(text=f"Ready - {total_count} participants detected, {matched_count} matched")
         
         # Update stats to show all participants
         self.update_stats(matched_count, total_count, matched_count)
@@ -471,13 +579,19 @@ class AttendanceApp:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_text.config(state=tk.NORMAL)
         
+        # Configure tags for different log levels
+        self.log_text.tag_config("info", foreground="#2c3e50")
+        self.log_text.tag_config("success", foreground="#27ae60")
+        self.log_text.tag_config("warning", foreground="#f39c12")
+        self.log_text.tag_config("error", foreground="#e74c3c")
+        
         if color:
-            # Simple text coloring via tags
-            tag = f"color_{color}"
-            self.log_text.tag_config(tag, foreground=color)
+            # Use predefined color tags
+            tag = color
             self.log_text.insert(tk.END, f"[{timestamp}] {message}\n", tag)
         else:
-            self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+            # Default info color
+            self.log_text.insert(tk.END, f"[{timestamp}] {message}\n", "info")
         
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
@@ -523,10 +637,10 @@ class AttendanceApp:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(report)
             
-            self.log(f"Report updated continuously: {filename}")
+            self.log(f"Report updated continuously: {filename}", "success")
             
         except Exception as e:
-            self.log(f"Error saving continuous report: {e}")
+            self.log(f"Error saving continuous report: {e}", "error")
         
     def generate_report(self):
         """Generate session report with only matched participants"""
@@ -578,7 +692,7 @@ class AttendanceApp:
                 df = pd.DataFrame(matched_data)
                 df.to_excel(filepath, index=False)
                 messagebox.showinfo("Success", f"Exported {len(matched_data)} matched participants to:\n{filepath}")
-                self.log(f"Exported {len(matched_data)} matched participants to Excel: {filepath}")
+                self.log(f"Exported {len(matched_data)} matched participants to Excel: {filepath}", "success")
             except Exception as e:
                 messagebox.showerror("Error", f"Export failed:\n{e}")
                 
@@ -598,7 +712,7 @@ class AttendanceApp:
                 df = pd.DataFrame(matched_data)
                 df.to_csv(filepath, index=False)
                 messagebox.showinfo("Success", f"Exported {len(matched_data)} matched participants to:\n{filepath}")
-                self.log(f"Exported {len(matched_data)} matched participants to CSV: {filepath}")
+                self.log(f"Exported {len(matched_data)} matched participants to CSV: {filepath}", "success")
             except Exception as e:
                 messagebox.showerror("Error", f"Export failed:\n{e}")
                 
@@ -1010,6 +1124,29 @@ class AttendanceApp:
                 self.log(f"Error in participant monitor: {e}")
                 time.sleep(1)  # Wait longer on error to prevent spam
     
+    def show_help(self):
+        """Show user guide dialog"""
+        help_text = (
+            "Zoom Attendance System - User Guide\n\n"
+            "1. SETUP TAB:\n"
+            "   - Load student data from a text file or Google Sheet\n"
+            "   - Enter Zoom meeting details (ID, passcode, participants)\n"
+            "   - Adjust match threshold and enable continuous save if needed\n\n"
+            "2. LIVE TRACKING TAB:\n"
+            "   - Click '▶ Join Meeting' to start tracking\n"
+            "   - View real-time participant updates\n"
+            "   - Click '⏹ Stop' to end tracking\n\n"
+            "3. REPORTS TAB:\n"
+            "   - View attendance report\n"
+            "   - Export to Excel/CSV or copy to clipboard\n\n"
+            "Keyboard Shortcuts:\n"
+            "   Ctrl+O - Load Roll Numbers\n"
+            "   Ctrl+E - Export to Excel\n"
+            "   Ctrl+Shift+E - Export to CSV\n"
+            "   Ctrl+Q - Exit Application"
+        )
+        messagebox.showinfo("User Guide", help_text)
+        
     def show_about(self):
         """Show about dialog"""
         messagebox.showinfo("About", 
