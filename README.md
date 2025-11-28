@@ -2,19 +2,31 @@
 
 An automated attendance tracking system for Zoom meetings that extracts participant information and matches it with student roll numbers.
 
+![App Screenshot](Assets/app.png)
+
 ## Table of Contents
-- [Overview](#overview)
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Loading Student Data](#loading-student-data)
-- [Running Meetings](#running-meetings)
-- [Viewing Results](#viewing-results)
-- [Exporting Data](#exporting-data)
-- [Building Executable](#building-executable)
-- [Requirements](#requirements)
-- [License](#license)
+- [Zoom Attendance System](#zoom-attendance-system)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Features](#features)
+  - [How It Works](#how-it-works)
+  - [Installation](#installation)
+    - [Option 1: Running from Source Code](#option-1-running-from-source-code)
+    - [Option 2: Using Pre-built Executable](#option-2-using-pre-built-executable)
+  - [Usage](#usage)
+    - [Loading Student Data](#loading-student-data)
+      - [From Text File](#from-text-file)
+      - [From Google Sheets](#from-google-sheets)
+    - [Running Meetings](#running-meetings)
+    - [Viewing Results](#viewing-results)
+    - [Exporting Data](#exporting-data)
+      - [To Clipboard](#to-clipboard)
+      - [To Excel/CSV](#to-excelcsv)
+  - [Building Executable](#building-executable)
+  - [Requirements](#requirements)
+    - [Python Packages](#python-packages)
+  - [License](#license)
+  - [Made by](#made-by)
 
 ## Overview
 
