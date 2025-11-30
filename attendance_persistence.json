@@ -1,0 +1,120 @@
+{
+  "session_id": "20251130_132332",
+  "timestamp": "2025-11-30T13:23:32.997911",
+  "records": {
+    "Fahad Akash": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "Jahid": {
+      "matched_name": "Jahid",
+      "roll": "1",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Emon": {
+      "matched_name": "Emon",
+      "roll": "3",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "fahad akash": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "FAHAD AKASH": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Fahad akash": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "jahid": {
+      "matched_name": "Jahid",
+      "roll": "1",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "EMON": {
+      "matched_name": "Emon",
+      "roll": "3",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Fahad  Akash": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "  Fahad Akash  ": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "Fahad Akashh": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "Fahad Akas": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "Fahad Akssh": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 90.9090909090909,
+      "status": "matched"
+    },
+    "Alvi ( roll-29)": {
+      "matched_name": "Alvi ( roll-29)",
+      "roll": "29",
+      "confidence": 96.55172413793103,
+      "status": "matched"
+    },
+    "jannatul ferdous": {
+      "matched_name": "jannatul ferdous",
+      "roll": "14",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "JANNATUL FERDOUS": {
+      "matched_name": "jannatul ferdous",
+      "roll": "14",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "MOMIN": {
+      "matched_name": "MOMIN",
+      "roll": "21",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "momin": {
+      "matched_name": "MOMIN",
+      "roll": "21",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Umme Hani Bithe": {
+      "matched_name": "Umme Hani Bithe",
+      "roll": "41",
+      "confidence": 80.0,
+      "status": "matched"
+    }
+  }
+}

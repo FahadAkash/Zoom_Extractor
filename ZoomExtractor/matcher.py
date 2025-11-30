@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 
 class RollMatcher:
-    def __init__(self, threshold=75):
+    def __init__(self, threshold=60):
         """
         Initialize matcher
         

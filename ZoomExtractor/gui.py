@@ -43,7 +43,7 @@ class AttendanceApp:
         pass
         
         # Initialize components
-        self.matcher = RollMatcher(threshold=75)
+        self.matcher = RollMatcher()
         
         # State
         self.is_tracking = False
@@ -138,6 +138,18 @@ class AttendanceApp:
         self.roll_status = ttk.Label(btn_frame, text="No file loaded", foreground="red", font=('Arial', 9))
         self.roll_status.pack(side=tk.LEFT, padx=10)
         
+        # Course code section
+        frame_course = ttk.Labelframe(self.setup_tab, text="Course Information", padding=15)
+        frame_course.pack(fill=tk.X, padx=15, pady=10)
+        
+        course_frame = ttk.Frame(frame_course)
+        course_frame.pack(fill=tk.X)
+        
+        ttk.Label(course_frame, text="Course Code:", font=('Arial', 9)).pack(side=tk.LEFT)
+        self.course_code_var = tk.StringVar(value="CSE - 407")
+        course_entry = ttk.Entry(course_frame, textvariable=self.course_code_var, width=20)
+        course_entry.pack(side=tk.LEFT, padx=10)
+        
         # Zoom Meeting Details
         frame_meeting = ttk.Labelframe(self.setup_tab, text="Zoom Meeting Configuration", padding=15)
         frame_meeting.pack(fill=tk.X, padx=15, pady=10)
@@ -162,10 +174,10 @@ class AttendanceApp:
         frame_settings.pack(fill=tk.X, padx=15, pady=10)
         
         ttk.Label(frame_settings, text="Match Threshold (%):", font=('Arial', 9)).grid(row=0, column=0, sticky=tk.W, pady=8)
-        self.threshold_var = tk.IntVar(value=75)
+        self.threshold_var = tk.IntVar(value=self.matcher.threshold)
         ttk.Scale(frame_settings, from_=50, to=100, variable=self.threshold_var, 
                  orient=tk.HORIZONTAL, command=self.update_threshold, length=200).grid(row=0, column=1, sticky=tk.EW, padx=5)
-        self.threshold_label = ttk.Label(frame_settings, text="75", font=('Arial', 9, 'bold'))
+        self.threshold_label = ttk.Label(frame_settings, text=str(self.matcher.threshold), font=('Arial', 9, 'bold'))
         self.threshold_label.grid(row=0, column=2, padx=10)
         
         # Continuous Save Option
@@ -405,7 +417,7 @@ class AttendanceApp:
             
             # Format the data as specified
             date_str = datetime.now().strftime("%d.%m.%y")
-            code = "CSE - 407"  # You can make this configurable if needed
+            code = self.course_code_var.get()
             roll_str = f"({','.join(map(str, matched_participants))})"
             
             # Create the formatted text
@@ -1068,7 +1080,7 @@ class AttendanceApp:
                             unwanted_patterns = [
                                 'Unmute', 'start Video', 'Participants', 'chat', 'Reactions', 
                                 'Share Screen', 'more', 'leave', 'Pleader', 'upgrade your browser',
-                                'update your browder', 'Speaker', 'Gallery View', 'Participant \(',
+                                'update your browder', 'Speaker', 'Gallery View', 'Participant (',
                                 'Mute', 'Turn off', 'NEW', 'Invite', 'Record', 'Security', 'Manage Participants',
                                 'Stop Video', 'Batch-72-01'
                             ]

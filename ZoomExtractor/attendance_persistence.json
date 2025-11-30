@@ -1,11 +1,95 @@
 {
-  "session_id": "20251130_104407",
-  "timestamp": "2025-11-30T11:01:00.055522",
+  "session_id": "20251130_124939",
+  "timestamp": "2025-11-30T12:49:39.036317",
   "records": {
     "Fahad Akash": {
       "matched_name": "Fahad Akash",
-      "roll": "8",
+      "roll": "3",
       "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "Faria": {
+      "matched_name": "Faria",
+      "roll": "13",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Jahid Hasan": {
+      "matched_name": "Jahid Hasan",
+      "roll": "1",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Soumik Hasan": {
+      "matched_name": "Soumik Hasan",
+      "roll": "17",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "FARIA": {
+      "matched_name": "Faria",
+      "roll": "13",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "jahid hasan": {
+      "matched_name": "Jahid Hasan",
+      "roll": "1",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Abdul Alim": {
+      "matched_name": "Abdul Alim-40",
+      "roll": "22",
+      "confidence": 86.95652173913044,
+      "status": "matched"
+    },
+    "Rukaiya": {
+      "matched_name": "Rukaiya-28",
+      "roll": "28",
+      "confidence": 82.35294117647058,
+      "status": "matched"
+    },
+    "Shail": {
+      "matched_name": "Sahil",
+      "roll": "10",
+      "confidence": 80.0,
+      "status": "matched"
+    },
+    "Nahid Nahid": {
+      "matched_name": "Nahid Nahid",
+      "roll": "25",
+      "confidence": 95,
+      "status": "matched"
+    },
+    "Fahad  Akash": {
+      "matched_name": "Fahad Akash",
+      "roll": "3",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "Fahad Akash ": {
+      "matched_name": "Fahad Akash",
+      "roll": "3",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    " Fahad Akash": {
+      "matched_name": "Fahad Akash",
+      "roll": "3",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    },
+    "15 Fahad": {
+      "matched_name": "Mitu",
+      "roll": "15",
+      "confidence": 100,
+      "status": "matched"
+    },
+    "sbs alvi": {
+      "matched_name": "sbs alvi",
+      "roll": "16",
+      "confidence": 95,
       "status": "matched"
     }
   }
