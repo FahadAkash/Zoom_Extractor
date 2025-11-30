@@ -54,6 +54,9 @@ class AttendanceApp:
         self.meeting_thread = None
         self.stop_event = threading.Event()
         
+        # Refresh counter for participant data fetching
+        self.refresh_count = 0
+        
         # Create UI
         self.create_menu()
         self.create_tabs()
@@ -224,6 +227,10 @@ class AttendanceApp:
         self.stat_matched = ttk.Label(stats_frame, text="Matched: 0", font=('Arial', 14, 'bold'), foreground='#27ae60')
         self.stat_matched.pack(side=tk.LEFT, padx=25)
         
+        # Refresh counter indicator
+        self.stat_refresh = ttk.Label(stats_frame, text="Refreshes: 0", font=('Arial', 14, 'bold'), foreground='#9b59b6')
+        self.stat_refresh.pack(side=tk.LEFT, padx=25)
+        
         # Participant list
         list_frame = ttk.Labelframe(self.live_tab, text="Participant List", padding=10)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
@@ -369,13 +376,26 @@ class AttendanceApp:
     def copy_attendance_to_clipboard(self):
         """Copy attendance data to clipboard in the specified format"""
         try:
-            # Get matched participants with roll numbers
+            # Get matched participants with roll numbers from both current session and persistent records
             matched_participants = []
+            
+            # Add current session records
             for name, match_data in self.matcher.matched_records.items():
                 if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
                     try:
                         roll_num = int(match_data['roll'])
                         matched_participants.append(roll_num)
+                    except ValueError:
+                        # Skip if roll number is not a valid integer
+                        continue
+            
+            # Add persistent records
+            for name, match_data in self.matcher.persistent_records.items():
+                if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
+                    try:
+                        roll_num = int(match_data['roll'])
+                        if roll_num not in matched_participants:  # Avoid duplicates
+                            matched_participants.append(roll_num)
                     except ValueError:
                         # Skip if roll number is not a valid integer
                         continue
@@ -431,6 +451,9 @@ class AttendanceApp:
             self.is_tracking = True
             self.btn_start.config(state=tk.DISABLED)
             self.btn_stop.config(state=tk.NORMAL)
+            # Reset refresh counter when starting new session
+            self.refresh_count = 0
+            self.update_refresh_counter()
             self.log(f"Joining Zoom meeting {meeting_id} with {participants} participants...", "info")
             self.status_bar.config(text="Joining Zoom meeting...")
             
@@ -466,6 +489,9 @@ class AttendanceApp:
             self.matcher.matched_records = {}
             self.tree.delete(*self.tree.get_children())
             self.update_stats(0, 0, 0)
+            # Reset refresh counter
+            self.refresh_count = 0
+            self.update_refresh_counter()
             self.log("Data reset", "warning")
             
     # Removed update_tile_height method as it's no longer needed
@@ -536,6 +562,10 @@ class AttendanceApp:
         self.stat_total.config(text=f"Total Detected: {total}")
         self.stat_matched.config(text=f"Matched: {matched}")
         
+    def update_refresh_counter(self):
+        """Update the refresh counter display"""
+        self.stat_refresh.config(text=f"Refreshes: {self.refresh_count}")
+        
     def log(self, message, color=None):
         """Add to event log"""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -564,7 +594,7 @@ class AttendanceApp:
             # Use a single filename
             filename = "attendance_report.txt"
             
-            # Generate report content
+            # Generate report content using combined records
             stats = self.matcher.get_statistics() if self.roll_file_loaded else None
             
             report = "=" * 60 + "\n"
@@ -583,11 +613,20 @@ class AttendanceApp:
             report += "ATTENDANCE DETAILS\n"
             report += "-" * 60 + "\n\n"
             
-            # Only show matched participants with roll numbers
+            # Get matched participants from both current session and persistent records
             matched_participants = []
+            
+            # Add current session records
             for name, match_data in self.matcher.matched_records.items():
                 if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
                     matched_participants.append((name, match_data['roll']))
+            
+            # Add persistent records
+            for name, match_data in self.matcher.persistent_records.items():
+                if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
+                    # Check if this participant is already in the list to avoid duplicates
+                    if not any(roll == match_data['roll'] for _, roll in matched_participants):
+                        matched_participants.append((name, match_data['roll']))
             
             # Sort by roll number
             matched_participants.sort(key=lambda x: x[1])
@@ -623,11 +662,20 @@ class AttendanceApp:
         report += "ATTENDANCE DETAILS\n"
         report += "-" * 60 + "\n\n"
         
-        # Only show matched participants with roll numbers
+        # Get matched participants from both current session and persistent records
         matched_participants = []
+        
+        # Add current session records
         for name, match_data in self.matcher.matched_records.items():
             if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
                 matched_participants.append((name, match_data['roll']))
+        
+        # Add persistent records
+        for name, match_data in self.matcher.persistent_records.items():
+            if match_data.get('status') == 'matched' and match_data.get('roll') and match_data.get('roll') != 'N/A':
+                # Check if this participant is already in the list to avoid duplicates
+                if not any(roll == match_data['roll'] for _, roll in matched_participants):
+                    matched_participants.append((name, match_data['roll']))
         
         # Sort by roll number
         matched_participants.sort(key=lambda x: x[1])
@@ -647,7 +695,7 @@ class AttendanceApp:
         
         if filepath:
             try:
-                # Filter to only include matched participants with roll numbers
+                # Get data from both current session and persistent records
                 all_data = self.matcher.export_attendance()
                 matched_data = [row for row in all_data if row['Status'] == 'Matched' and row['Roll Number'] != 'N/A']
                 
@@ -667,7 +715,7 @@ class AttendanceApp:
         
         if filepath:
             try:
-                # Filter to only include matched participants with roll numbers
+                # Get data from both current session and persistent records
                 all_data = self.matcher.export_attendance()
                 matched_data = [row for row in all_data if row['Status'] == 'Matched' and row['Roll Number'] != 'N/A']
                 
@@ -916,6 +964,10 @@ class AttendanceApp:
                             # Put participants in queue for processing
                             self.participants_queue.put(participants)
                             self.log(f"Fetched {len(participants)} participants")
+                            
+                            # Increment refresh counter and update display
+                            self.refresh_count += 1
+                            self.root.after(0, self.update_refresh_counter)
                     except Exception as e:
                         self.log(f"Error fetching participants: {e}")
                     

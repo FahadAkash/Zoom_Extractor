@@ -7,7 +7,9 @@ from rapidfuzz import fuzz, process
 import re
 import requests
 import pandas as pd
-
+import json
+import os
+from datetime import datetime
 
 class RollMatcher:
     def __init__(self, threshold=75):
@@ -20,6 +22,12 @@ class RollMatcher:
         self.threshold = threshold
         self.database = {}  # {name: roll_number}
         self.matched_records = {}  # {detected_name: (matched_name, roll, confidence)}
+        
+        # Initialize persistent storage
+        self.persistent_records = {}  # Persistent storage for matched records
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.persistence_file = "attendance_persistence.json"
+        self.load_persistent_records()
         
     def load_from_file(self, filepath):
         """
@@ -143,12 +151,15 @@ class RollMatcher:
             if roll_num in roll_to_name:
                 matched_db_name = roll_to_name[roll_num]
                 print(f"  ✓ FOUND ROLL NUMBER MATCH (list format): {roll_num} -> {matched_db_name}")
-                return {
+                result = {
                     'matched_name': matched_db_name,
                     'roll': self.database[matched_db_name],
                     'confidence': 100,  # Perfect match by ID
                     'status': 'matched'
                 }
+                # Add to persistent records
+                self.add_to_persistent_records(detected_name, result)
+                return result
         
         # Check if this ends with a roll number (e.g., "Name 3")
         # But avoid matching things like "Participants (3)" or "Room 3"
@@ -167,68 +178,174 @@ class RollMatcher:
             if roll_num in roll_to_name and len(name_part) > 3 and not is_forbidden:
                 matched_db_name = roll_to_name[roll_num]
                 print(f"  ✓ FOUND ROLL NUMBER MATCH (end format): {roll_num} -> {matched_db_name}")
-                return {
+                result = {
                     'matched_name': matched_db_name,
                     'roll': self.database[matched_db_name],
                     'confidence': 100,  # Perfect match by ID
                     'status': 'matched'
                 }
+                # Add to persistent records
+                self.add_to_persistent_records(detected_name, result)
+                return result
 
-        # STRATEGY 2: Fuzzy Name Matching
+        # STRATEGY 2: Case-insensitive Fuzzy Name Matching
+        # First, try case-insensitive matching for exact matches
+        detected_lower = processed_name.lower()
+        for db_name in self.database.keys():
+            if db_name.lower() == detected_lower:
+                print(f"  ✓ FOUND EXACT CASE-INSENSITIVE MATCH: '{processed_name}' -> '{db_name}'")
+                result = {
+                    'matched_name': db_name,
+                    'roll': self.database[db_name],
+                    'confidence': 95,  # High confidence for exact match with case difference
+                    'status': 'matched'
+                }
+                # Add to persistent records
+                self.add_to_persistent_records(detected_name, result)
+                return result
+        
+        # Then use fuzzy matching with case normalization
         result = process.extractOne(
             processed_name,
             self.database.keys(),
             scorer=fuzz.token_sort_ratio
         )
         
-        if result:
+        # Also try case-folded version for better matching
+        result_folded = process.extractOne(
+            processed_name.lower(),
+            [name.lower() for name in self.database.keys()],
+            scorer=fuzz.token_sort_ratio
+        )
+        
+        # Choose the better match
+        use_folded = False
+        if result_folded and (not result or result_folded[1] > result[1]):
+            use_folded = True
+            # Find the original case version of the matched name
+            matched_name_folded = result_folded[0]
+            matched_name_original = None
+            for name in self.database.keys():
+                if name.lower() == matched_name_folded:
+                    matched_name_original = name
+                    break
+            
+            if matched_name_original and result_folded[1] >= self.threshold:
+                print(f"  Found case-insensitive fuzzy match: '{matched_name_original}' with score {result_folded[1]}")
+                print(f"  Match accepted (threshold: {self.threshold})")
+                result_obj = {
+                    'matched_name': matched_name_original,
+                    'roll': self.database[matched_name_original],
+                    'confidence': result_folded[1],
+                    'status': 'matched'
+                }
+                # Add to persistent records
+                self.add_to_persistent_records(detected_name, result_obj)
+                return result_obj
+        
+        if result and not use_folded:
             matched_name, score, _ = result
             print(f"  Found fuzzy match: '{matched_name}' with score {score}")
             
             if score >= self.threshold:
                 print(f"  Match accepted (threshold: {self.threshold})")
-                return {
+                result_obj = {
                     'matched_name': matched_name,
                     'roll': self.database[matched_name],
                     'confidence': score,
                     'status': 'matched'
                 }
+                # Add to persistent records
+                self.add_to_persistent_records(detected_name, result_obj)
+                return result_obj
             else:
                 print(f"  Match rejected (below threshold: {self.threshold})")
         
         # If no match found, try with original name as fallback
         if processed_name != detected_name:
             print(f"  Trying fallback with original name: '{detected_name}'")
+            
+            # Try case-insensitive matching first
+            detected_lower = detected_name.lower()
+            for db_name in self.database.keys():
+                if db_name.lower() == detected_lower:
+                    print(f"  ✓ FOUND EXACT CASE-INSENSITIVE MATCH (fallback): '{detected_name}' -> '{db_name}'")
+                    result_obj = {
+                        'matched_name': db_name,
+                        'roll': self.database[db_name],
+                        'confidence': 95,  # High confidence for exact match with case difference
+                        'status': 'matched'
+                    }
+                    # Add to persistent records
+                    self.add_to_persistent_records(detected_name, result_obj)
+                    return result_obj
+            
             result = process.extractOne(
                 detected_name,
                 self.database.keys(),
                 scorer=fuzz.token_sort_ratio
             )
             
-            if result:
+            # Also try case-folded version for better matching
+            result_folded = process.extractOne(
+                detected_name.lower(),
+                [name.lower() for name in self.database.keys()],
+                scorer=fuzz.token_sort_ratio
+            )
+            
+            # Choose the better match
+            use_folded = False
+            if result_folded and (not result or result_folded[1] > result[1]):
+                use_folded = True
+                # Find the original case version of the matched name
+                matched_name_folded = result_folded[0]
+                matched_name_original = None
+                for name in self.database.keys():
+                    if name.lower() == matched_name_folded:
+                        matched_name_original = name
+                        break
+                
+                if matched_name_original and result_folded[1] >= self.threshold:
+                    print(f"  Found case-insensitive fuzzy match (fallback): '{matched_name_original}' with score {result_folded[1]}")
+                    print(f"  Match accepted (threshold: {self.threshold})")
+                    result_obj = {
+                        'matched_name': matched_name_original,
+                        'roll': self.database[matched_name_original],
+                        'confidence': result_folded[1],
+                        'status': 'matched'
+                    }
+                    # Add to persistent records
+                    self.add_to_persistent_records(detected_name, result_obj)
+                    return result_obj
+            
+            if result and not use_folded:
                 matched_name, score, _ = result
                 print(f"  Fallback found match: '{matched_name}' with score {score}")
                 
                 if score >= self.threshold:
                     print(f"  Fallback match accepted (threshold: {self.threshold})")
-                    return {
+                    result_obj = {
                         'matched_name': matched_name,
                         'roll': self.database[matched_name],
                         'confidence': score,
                         'status': 'matched'
                     }
+                    # Add to persistent records
+                    self.add_to_persistent_records(detected_name, result_obj)
+                    return result_obj
                 else:
                     print(f"  Fallback match rejected (below threshold: {self.threshold})")
             else:
                 print("  No match found with original name")
         
         print(f"  No match found, returning as unknown")
-        return {
+        result_obj = {
             'matched_name': detected_name,
             'roll': 'N/A',
             'confidence': 0,
             'status': 'unknown'
         }
+        return result_obj
     
     def preprocess_name(self, name):
         """Preprocess name to handle common OCR issues"""
@@ -292,8 +409,12 @@ class RollMatcher:
     
     def get_statistics(self):
         """Get matching statistics"""
-        total = len(self.matched_records)
-        matched = sum(1 for r in self.matched_records.values() if r['status'] == 'matched')
+        # Combine current session records with persistent records for statistics
+        all_records = dict(self.matched_records)
+        all_records.update(self.persistent_records)
+        
+        total = len(all_records)
+        matched = sum(1 for r in all_records.values() if r['status'] == 'matched')
         unknown = total - matched
         
         return {
@@ -311,7 +432,11 @@ class RollMatcher:
             List of dicts for DataFrame conversion
         """
         data = []
-        for detected_name, match in self.matched_records.items():
+        # Combine current session records with persistent records
+        all_records = dict(self.matched_records)
+        all_records.update(self.persistent_records)
+        
+        for detected_name, match in all_records.items():
             data.append({
                 'Detected Name': detected_name,
                 'Matched Name': match['matched_name'] or 'Unknown',
@@ -437,3 +562,47 @@ class RollMatcher:
         except Exception as e:
             raise Exception(f"Error loading Google Sheet: {e}")
     
+    # Persistence methods
+    def add_to_persistent_records(self, detected_name, match_result):
+        """Add a matched record to persistent storage"""
+        # Only store matched records, not unknown ones
+        if match_result.get('status') == 'matched':
+            self.persistent_records[detected_name] = match_result
+            self.save_persistent_records()
+    
+    def load_persistent_records(self):
+        """Load persistent records from file"""
+        try:
+            if os.path.exists(self.persistence_file):
+                with open(self.persistence_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Load records but filter by current session or recent sessions
+                    self.persistent_records = data.get('records', {})
+                    print(f"Loaded {len(self.persistent_records)} persistent records")
+            else:
+                self.persistent_records = {}
+        except Exception as e:
+            print(f"Warning: Could not load persistent records: {e}")
+            self.persistent_records = {}
+    
+    def save_persistent_records(self):
+        """Save persistent records to file"""
+        try:
+            data = {
+                'session_id': self.session_id,
+                'timestamp': datetime.now().isoformat(),
+                'records': self.persistent_records
+            }
+            with open(self.persistence_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning: Could not save persistent records: {e}")
+    
+    def clear_persistent_records(self):
+        """Clear all persistent records"""
+        self.persistent_records = {}
+        try:
+            if os.path.exists(self.persistence_file):
+                os.remove(self.persistence_file)
+        except Exception as e:
+            print(f"Warning: Could not clear persistent records file: {e}")

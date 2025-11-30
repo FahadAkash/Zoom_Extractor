@@ -1,0 +1,12 @@
+{
+  "session_id": "20251130_104407",
+  "timestamp": "2025-11-30T11:01:00.055522",
+  "records": {
+    "Fahad Akash": {
+      "matched_name": "Fahad Akash",
+      "roll": "8",
+      "confidence": 95.65217391304348,
+      "status": "matched"
+    }
+  }
+}
